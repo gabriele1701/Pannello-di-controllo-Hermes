@@ -62,11 +62,17 @@ def _url_applicativa() -> str:
     URL puntino per sbaglio a database diversi -- che renderebbe i test dei
     privilegi insensati senza che nessuno se ne accorga.
     """
-    return str(
-        make_url(_url_privilegiata()).set(
-            username="hermes_app", password=PASSWORD_RUOLO_APP
-        )
-    )
+    # `render_as_string(hide_password=False)` e NON `str()`.
+    #
+    # `str()` su un URL di SQLAlchemy sostituisce la password con `***`: e'
+    # una protezione contro le password nei log, e qui produceva un URL con
+    # la password letterale `***`. Non si vedeva su un cluster locale con
+    # autenticazione `trust`, dove qualunque password e' accettata; si e'
+    # visto in CI, dove il collegamento e' TCP con scram, come
+    # «password authentication failed for user "hermes_app"».
+    return make_url(_url_privilegiata()).set(
+        username="hermes_app", password=PASSWORD_RUOLO_APP
+    ).render_as_string(hide_password=False)
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -424,6 +424,33 @@ def test_la_revoca_e_lunica_colonna_scrivibile(
 # --------------------------------------------------------------------------- #
 
 
+def test_lurl_del_ruolo_applicativo_porta_la_password_vera() -> None:
+    """Guardia contro una regressione che la CI ha trovato e il locale no.
+
+    L'URL del ruolo applicativo si deriva da quella privilegiata cambiando
+    utente e password. Scriverlo con `str(url)` sembra funzionare e non
+    funziona: SQLAlchemy sostituisce la password con `***` in `__str__`, come
+    protezione contro le password nei log. Il risultato e' un URL la cui
+    password e' letteralmente `***`.
+
+    Su un cluster di sviluppo con autenticazione `trust` quell'URL si collega
+    comunque -- qualunque password e' accettata -- quindi l'errore e'
+    invisibile in locale e appare solo dove l'autenticazione e' reale.
+
+    Questo test lo rende visibile sempre: non apre nessuna connessione,
+    guarda la stringa.
+    """
+    from tests.conftest import PASSWORD_RUOLO_APP, _url_applicativa
+
+    url = _url_applicativa()
+    assert "***" not in url, (
+        "la password e' stata mascherata: usare "
+        "render_as_string(hide_password=False) invece di str()"
+    )
+    assert PASSWORD_RUOLO_APP in url
+    assert "hermes_app" in url
+
+
 def test_lapplicazione_si_connette_come_ruolo_applicativo(client) -> None:
     """La sessione che usano le rotte e' quella del ruolo con pochi privilegi.
 
