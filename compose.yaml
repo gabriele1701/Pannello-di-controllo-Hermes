@@ -2,21 +2,30 @@
 #
 # Nessun segreto in questo file e nessun default funzionante per i segreti.
 # La sintassi ${VAR:?messaggio} fa FALLIRE `docker compose up` se la variabile
-# manca, con il messaggio indicato. E' deliberato: un default che funziona e'
-# un default che resta in produzione, dove diventa una credenziale nota.
+# manca. E' deliberato: un default che funziona e' un default che resta in
+# produzione, dove diventa una credenziale nota.
+#
+# NOTA SULLA SINTASSI, imparata rompendola: i valori che contengono
+# `${VAR:?...}` sono scalari YAML **fra doppi apici**. Senza gli apici, un
+# messaggio che contenga due punti seguiti da spazio -- "generarla: openssl
+# ..." -- viene letto da YAML come un separatore chiave/valore, e l'intero
+# file non si parsa. I messaggi qui restano brevi e la spiegazione sta nei
+# commenti, che e' il posto giusto per starci.
 #
 # Avvio:
-#     cp .env.example .env     # poi riempire i tre valori obbligatori
+#     cp .env.example .env     # poi riempire i quattro valori obbligatori
 #     docker compose up --build
 
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-hermes}
-      POSTGRES_DB: ${POSTGRES_DB:-hermes_panel}
-      # Nessun default: se POSTGRES_PASSWORD non e' definita, l'avvio fallisce.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD non impostata. Copiare .env.example in .env e generarne una: openssl rand -base64 32}
+      # Ruolo PROPRIETARIO delle tabelle. Lo usano solo migrazioni e seed.
+      POSTGRES_USER: "${POSTGRES_USER:-hermes}"
+      POSTGRES_DB: "${POSTGRES_DB:-hermes_panel}"
+      # Nessun default: se manca, l'avvio fallisce.
+      # Generarla con: openssl rand -base64 32
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?manca in .env, vedi .env.example}"
     volumes:
       - pgdata:/var/lib/postgresql/data
     # Nessuna porta pubblicata. Il database e' raggiungibile solo dalla rete
@@ -38,14 +47,46 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hermes}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD non impostata}@db:5432/${POSTGRES_DB:-hermes_panel}
+      # --- Due URL, due ruoli di database ------------------------------- #
+      #
+      # La separazione non e' cosmetica. In PostgreSQL il PROPRIETARIO di una
+      # tabella puo' disabilitarne i trigger:
+      #
+      #     ALTER TABLE tier_overrides DISABLE TRIGGER ALL;
+      #
+      # Gli invarianti di questo progetto -- la monotonia del tier,
+      # l'append-only sul log -- SONO trigger. Un'applicazione connessa come
+      # proprietario avrebbe quindi a disposizione il comando che disattiva i
+      # propri controlli di sicurezza, e con lei qualunque difetto del suo
+      # codice.
+      #
+      # DATABASE_URL: il ruolo con cui gira l'applicazione. Non possiede
+      # niente, non e' superutente, e ha le concessioni minime assegnate dalla
+      # migrazione 0002 -- `tools` e `audit_events` in sola lettura comprese.
+      DATABASE_URL: "postgresql+psycopg://hermes_app:${HERMES_APP_DB_PASSWORD:?manca in .env, vedi .env.example}@db:5432/${POSTGRES_DB:-hermes_panel}"
+
+      # MIGRATIONS_DATABASE_URL: il ruolo proprietario. Lo usano SOLO
+      # `alembic upgrade head` e il seed, all'avvio, prima che il server parta.
+      MIGRATIONS_DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-hermes}:${POSTGRES_PASSWORD:?manca in .env}@db:5432/${POSTGRES_DB:-hermes_panel}"
+
+      # Letta dalla migrazione 0002, che imposta la password del ruolo
+      # applicativo. Passa come parametro di bind e non come testo dello
+      # statement, per non finire nel log delle query.
+      HERMES_APP_DB_PASSWORD: "${HERMES_APP_DB_PASSWORD:?manca in .env}"
+
+      # --- Sessione ------------------------------------------------------ #
       # Nessun default: una chiave di firma prevedibile permetterebbe a
       # chiunque di forgiare un cookie di sessione valido.
-      APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY non impostata. Generarla: openssl rand -hex 32}
-      APP_ENV: ${APP_ENV:-development}
-      HERMES_ADMIN_USERNAME: ${HERMES_ADMIN_USERNAME:-operatore}
-      HERMES_ADMIN_PASSWORD: ${HERMES_ADMIN_PASSWORD:?HERMES_ADMIN_PASSWORD non impostata: senza non esisterebbe nessun operatore con cui entrare}
+      # Generarla con: openssl rand -hex 32
+      APP_SECRET_KEY: "${APP_SECRET_KEY:?manca in .env, generarla con openssl rand -hex 32}"
+      APP_ENV: "${APP_ENV:-development}"
+
+      # --- Operatore iniziale -------------------------------------------- #
+      HERMES_ADMIN_USERNAME: "${HERMES_ADMIN_USERNAME:-operatore}"
+      HERMES_ADMIN_PASSWORD: "${HERMES_ADMIN_PASSWORD:?manca in .env, senza non esiste nessun operatore con cui entrare}"
     ports:
+      # Su 127.0.0.1 e non su 0.0.0.0: il pannello decide cosa gli agenti LLM
+      # possono fare, e non deve essere raggiungibile dalla rete.
       - "127.0.0.1:8000:8000"
     depends_on:
       db:

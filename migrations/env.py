@@ -17,11 +17,16 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-_url = os.environ.get("DATABASE_URL")
+# MIGRATIONS_DATABASE_URL prima di DATABASE_URL: le migrazioni devono girare
+# con il ruolo PROPRIETARIO delle tabelle, non con quello dell'applicazione.
+# Il ruolo applicativo non possiede niente -- e' il punto della separazione --
+# quindi un `alembic upgrade head` con quello fallirebbe al primo CREATE.
+_url = os.environ.get("MIGRATIONS_DATABASE_URL") or os.environ.get("DATABASE_URL")
 if not _url:
     raise RuntimeError(
-        "DATABASE_URL non impostata: le migrazioni non sanno su quale "
-        "database girare. In locale: export DATABASE_URL=postgresql+psycopg://..."
+        "Ne' MIGRATIONS_DATABASE_URL ne' DATABASE_URL sono impostate: le "
+        "migrazioni non sanno su quale database girare. In locale: "
+        "export MIGRATIONS_DATABASE_URL=postgresql+psycopg://..."
     )
 config.set_main_option("sqlalchemy.url", _url)
 

@@ -60,6 +60,40 @@ def session_factory() -> sessionmaker[Session]:
     return _SessionLocal
 
 
+# --------------------------------------------------------------------------- #
+# Connessione privilegiata
+#
+# Migrazioni e seed scrivono su tabelle che il ruolo applicativo non puo'
+# toccare: `tools`, `users` e `audit_events` sono in sola lettura per lui, ed
+# e' il motivo per cui la separazione dei ruoli esiste.
+#
+# Quindi il seed NON passa dalla sessione dell'applicazione. Usa un motore
+# proprio, costruito sull'URL delle migrazioni, e questa funzione non viene
+# mai usata da una rotta: se lo fosse, la separazione dei ruoli non
+# proteggerebbe piu' niente.
+# --------------------------------------------------------------------------- #
+
+_privileged_engine = None
+_PrivilegedSession: sessionmaker[Session] | None = None
+
+
+def privileged_session_factory() -> sessionmaker[Session]:
+    """Sessioni con il ruolo proprietario. Solo per migrazioni e seed."""
+    global _privileged_engine, _PrivilegedSession
+    if _PrivilegedSession is None:
+        _privileged_engine = create_engine(
+            get_settings().migrations_url, pool_pre_ping=True, future=True
+        )
+        _PrivilegedSession = sessionmaker(
+            bind=_privileged_engine,
+            autocommit=False,
+            autoflush=False,
+            expire_on_commit=False,
+            future=True,
+        )
+    return _PrivilegedSession
+
+
 def get_db() -> Iterator[Session]:
     """Dipendenza FastAPI: una sessione per richiesta."""
     db = session_factory()()
