@@ -13,8 +13,19 @@ WORKDIR /build
 
 # package.json e lockfile prima del resto: cambiano raramente, quindi il
 # layer delle dipendenze resta in cache quando cambia solo il codice.
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+#
+# Il lockfile NON e' opzionale (niente glob): se manca, il build deve
+# fallire qui invece di risolvere versioni fresche.
+COPY frontend/package.json frontend/package-lock.json ./
+
+# `npm ci` secco, senza fallback su `npm install`.
+#
+# Il fallback che c'era prima nascondeva l'errore (2>/dev/null) e poi
+# ignorava il lockfile, quindi l'immagine poteva essere costruita con
+# dipendenze diverse da quelle provate -- riuscendo. Un build riproducibile
+# che all'occorrenza diventa non riproducibile senza dirlo e' peggio di uno
+# che si rompe: qui `npm ci` falla rumorosamente, che e' cio' che serve.
+RUN npm ci --no-audit --no-fund
 
 COPY frontend/ ./
 RUN npm run build
