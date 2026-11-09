@@ -55,15 +55,20 @@ Poi riempire i quattro valori obbligatori in `.env`:
 
 ```bash
 # password del ruolo proprietario del database
-openssl rand -base64 32
+openssl rand -hex 32
 
 # password del ruolo con cui gira l'applicazione (sono due ruoli distinti,
 # vedi «Due ruoli di database» più sotto)
-openssl rand -base64 32
+openssl rand -hex 32
 
 # chiave di firma del cookie di sessione
 openssl rand -hex 32
 ```
+
+Esadecimale e non base64: queste password finiscono dentro un URL di
+connessione, e `openssl rand -base64` produce una `/` nel 40% dei casi — un
+carattere che in un URL chiude la parte delle credenziali. L'esadecimale non
+ha caratteri speciali e, a parità di byte generati, ha la stessa entropia.
 
 e scegliere la password dell'operatore (`HERMES_ADMIN_PASSWORD`). Infine:
 

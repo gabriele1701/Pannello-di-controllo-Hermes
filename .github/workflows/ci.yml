@@ -188,10 +188,19 @@ jobs:
         run: |
           set -eu
           cp .env.example .env
-          sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -base64 24)|" .env
-          sed -i "s|^HERMES_APP_DB_PASSWORD=.*|HERMES_APP_DB_PASSWORD=$(openssl rand -base64 24)|" .env
+          # Le password del database con caratteri che in un URL hanno un
+          # significato: `/`, `+` e `=`. Non e' una password realistica, e'
+          # il caso difficile messo di proposito.
+          #
+          # Prima queste righe usavano `openssl rand -base64`, che produce
+          # una `/` nel 40% dei casi: il lavoro passava o falliva a seconda
+          # del sorteggio, e quando falliva diceva che il database non
+          # rispondeva. Un caso al limite preso a caso e' un caso al limite
+          # che non si sa di avere; fissarlo qui lo rende deterministico.
+          sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=pa/ss+pro=prietario/$(openssl rand -hex 8)|" .env
+          sed -i "s|^HERMES_APP_DB_PASSWORD=.*|HERMES_APP_DB_PASSWORD=pa/ss+app=licativo/$(openssl rand -hex 8)|" .env
           sed -i "s|^APP_SECRET_KEY=.*|APP_SECRET_KEY=$(openssl rand -hex 32)|" .env
-          sed -i "s|^HERMES_ADMIN_PASSWORD=.*|HERMES_ADMIN_PASSWORD=$(openssl rand -base64 18)|" .env
+          sed -i "s|^HERMES_ADMIN_PASSWORD=.*|HERMES_ADMIN_PASSWORD=$(openssl rand -hex 18)|" .env
           if grep -q 'sostituiscimi' .env; then
             echo ".env.example ha segnaposto che il README non dice di riempire:" >&2
             grep -n 'sostituiscimi' .env >&2
