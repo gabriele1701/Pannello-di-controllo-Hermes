@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.conftest import PASSWORD_PROVA
+from tests.helpers import PASSWORD_PROVA
 
 #: Ogni rotta protetta, con il metodo con cui si raggiunge.
 #:

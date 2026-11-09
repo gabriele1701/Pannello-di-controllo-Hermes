@@ -33,10 +33,36 @@ class Settings(BaseSettings):
     database_url: str = Field(
         alias="DATABASE_URL",
         description=(
-            "URL SQLAlchemy del database. Obbligatorio: senza, l'applicazione "
-            "non sa dove sta il proprio stato."
+            "URL SQLAlchemy con cui l'applicazione in esercizio si connette. "
+            "Punta al ruolo `hermes_app`, che non possiede le tabelle e quindi "
+            "non puo' disabilitarne i trigger. Obbligatorio."
         ),
     )
+
+    migrations_database_url: str | None = Field(
+        default=None,
+        alias="MIGRATIONS_DATABASE_URL",
+        description=(
+            "URL con cui girano le migrazioni e il seed. Punta al ruolo "
+            "PROPRIETARIO delle tabelle, che puo' modificare lo schema perche' "
+            "e' il suo compito. Distinta da DATABASE_URL: se l'applicazione in "
+            "esercizio si connettesse con questo ruolo, potrebbe disabilitare "
+            "i propri vincoli con un ALTER TABLE."
+        ),
+    )
+
+    @property
+    def migrations_url(self) -> str:
+        """URL per le operazioni privilegiate: migrazioni e seed.
+
+        Se MIGRATIONS_DATABASE_URL non e' impostata ricade su DATABASE_URL.
+        E' una comodita' di sviluppo locale, dove spesso esiste un solo
+        ruolo, **non** una configurazione valida in esercizio: il compose
+        imposta le due URL distinte e rende obbligatoria la password del
+        ruolo applicativo, quindi il ripiego non si verifica in un
+        dispiegamento.
+        """
+        return self.migrations_database_url or self.database_url
 
     # -- sessione ----------------------------------------------------------- #
 

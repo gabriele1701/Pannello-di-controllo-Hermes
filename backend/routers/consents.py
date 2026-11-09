@@ -113,7 +113,7 @@ def concedi_consenso(
             # non descrive niente di eseguibile: solo l'agente proprietario
             # puo' invocare quel tool.
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "messaggio": (
                         f"Il tool '{tool.tool_id}' appartiene all'agente "
@@ -137,7 +137,7 @@ def concedi_consenso(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"messaggio": "Il consenso viola un vincolo di integrita'."},
         ) from exc
     db.refresh(consenso)

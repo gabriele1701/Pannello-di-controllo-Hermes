@@ -13,7 +13,6 @@ il codice da cui dipende l'avvio a freddo.
 
 from __future__ import annotations
 
-import datetime as dt
 import os
 import subprocess
 import uuid
@@ -21,26 +20,66 @@ from collections.abc import Iterator
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
+
+from backend.config import get_settings
+from tests.helpers import PASSWORD_PROVA, PASSWORD_RUOLO_APP_DEFAULT
 
 TEST_SECRET = "0" * 64
 
 
-def _url() -> str:
-    url = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
+#: Password del ruolo applicativo durante i test, dall'ambiente se c'e'.
+PASSWORD_RUOLO_APP = os.environ.get(
+    "HERMES_APP_DB_PASSWORD", PASSWORD_RUOLO_APP_DEFAULT
+)
+
+
+def _url_privilegiata() -> str:
+    """URL del ruolo PROPRIETARIO delle tabelle.
+
+    E' quella con cui girano le migrazioni, il seed e i test che verificano i
+    trigger in SQL diretto.
+    """
+    url = (
+        os.environ.get("TEST_DATABASE_URL")
+        or os.environ.get("MIGRATIONS_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+    )
     if not url:
         pytest.skip(
-            "TEST_DATABASE_URL (o DATABASE_URL) non impostata: i test "
-            "richiedono un PostgreSQL raggiungibile"
+            "TEST_DATABASE_URL (o MIGRATIONS_DATABASE_URL, o DATABASE_URL) "
+            "non impostata: i test richiedono un PostgreSQL raggiungibile"
         )
     return url
+
+
+def _url_applicativa() -> str:
+    """URL del ruolo `hermes_app`, derivata da quella privilegiata.
+
+    Stesso host e stesso database, utente diverso: cosi' la suite non ha
+    bisogno di una seconda variabile d'ambiente, e non c'e' modo che le due
+    URL puntino per sbaglio a database diversi -- che renderebbe i test dei
+    privilegi insensati senza che nessuno se ne accorga.
+    """
+    # `render_as_string(hide_password=False)` e NON `str()`.
+    #
+    # `str()` su un URL di SQLAlchemy sostituisce la password con `***`: e'
+    # una protezione contro le password nei log, e qui produceva un URL con
+    # la password letterale `***`. Non si vedeva su un cluster locale con
+    # autenticazione `trust`, dove qualunque password e' accettata; si e'
+    # visto in CI, dove il collegamento e' TCP con scram, come
+    # «password authentication failed for user "hermes_app"».
+    return make_url(_url_privilegiata()).set(
+        username="hermes_app", password=PASSWORD_RUOLO_APP
+    ).render_as_string(hide_password=False)
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _ambiente() -> Iterator[None]:
     """Variabili d'ambiente richieste dalla configurazione dell'app."""
-    os.environ["DATABASE_URL"] = _url()
+    os.environ["MIGRATIONS_DATABASE_URL"] = _url_privilegiata()
+    os.environ["HERMES_APP_DB_PASSWORD"] = PASSWORD_RUOLO_APP
     os.environ.setdefault("APP_SECRET_KEY", TEST_SECRET)
     os.environ.setdefault("APP_ENV", "development")
     yield
@@ -48,8 +87,19 @@ def _ambiente() -> Iterator[None]:
 
 @pytest.fixture(scope="session")
 def engine(_ambiente: None) -> Iterator[Engine]:
-    """Schema ricostruito da zero, applicando la migrazione."""
-    url = _url()
+    """Schema ricostruito da zero, applicando le migrazioni.
+
+    Restituisce il motore **privilegiato**: e' quello con cui i test
+    preparano i dati, perche' `tools`, `users` e `audit_events` sono in sola
+    lettura per il ruolo applicativo -- il che e' esattamente il punto della
+    separazione dei ruoli.
+
+    Imposta anche `DATABASE_URL` sul ruolo applicativo, quindi
+    **l'applicazione sotto test gira con le concessioni minime**: i test delle
+    API verificano allo stesso tempo il contratto HTTP e il fatto che quelle
+    concessioni bastino. Se mancasse un GRANT, la suite lo scoprirebbe.
+    """
+    url = _url_privilegiata()
     eng = create_engine(url, future=True)
     with eng.begin() as conn:
         # DROP SCHEMA e non TRUNCATE: le tabelle append-only rifiutano
@@ -58,12 +108,32 @@ def engine(_ambiente: None) -> Iterator[Engine]:
         # produzione passa dalla rimozione del volume.
         conn.execute(text("DROP SCHEMA public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
-    subprocess.run(
+
+    esito = subprocess.run(
         ["alembic", "upgrade", "head"],
-        check=True,
         capture_output=True,
-        env={**os.environ, "DATABASE_URL": url},
+        text=True,
+        env={
+            **os.environ,
+            "MIGRATIONS_DATABASE_URL": url,
+            "HERMES_APP_DB_PASSWORD": PASSWORD_RUOLO_APP,
+        },
     )
+    if esito.returncode != 0:
+        pytest.fail(f"alembic upgrade head e' fallito:\n{esito.stderr}")
+
+    # Da qui l'applicazione usa il ruolo applicativo, creato dalla 0002.
+    os.environ["DATABASE_URL"] = _url_applicativa()
+    get_settings.cache_clear()
+
+    yield eng
+    eng.dispose()
+
+
+@pytest.fixture(scope="session")
+def engine_app(engine: Engine) -> Iterator[Engine]:
+    """Motore con il ruolo `hermes_app`, per i test sui privilegi."""
+    eng = create_engine(_url_applicativa(), future=True)
     yield eng
     eng.dispose()
 
@@ -144,30 +214,11 @@ def perimetro_pulito(db: Session) -> Iterator[None]:
     db.commit()
 
 
-def sqlstate(exc: Exception) -> str | None:
-    """Codice SQLSTATE di un'eccezione SQLAlchemy.
-
-    I test controllano il CODICE e non il testo del messaggio: il testo e' per
-    l'operatore e puo' essere riscritto, il codice e' il contratto fra
-    database e applicazione.
-    """
-    orig = getattr(exc, "orig", None)
-    return getattr(orig, "sqlstate", None)
-
-
-def adesso() -> dt.datetime:
-    return dt.datetime.now(tz=dt.UTC)
 
 
 # --------------------------------------------------------------------------- #
 # Client HTTP
 # --------------------------------------------------------------------------- #
-
-#: Password dell'operatore dei test. Non e' un segreto: e' un valore di prova
-#: su un database di prova, e sta qui invece che in una variabile d'ambiente
-#: perche' i test devono poterla usare per autenticarsi.
-PASSWORD_PROVA = "password-di-prova-dei-test"
-
 
 @pytest.fixture
 def client(engine: Engine):

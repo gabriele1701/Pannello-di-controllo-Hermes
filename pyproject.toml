@@ -5,6 +5,14 @@ description = "Pannello di controllo della toolbox di sicurezza Hermes"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.118.0",
+    # Pinnata anche se e' una dipendenza transitiva di FastAPI, perche' il
+    # codice usa direttamente le sue costanti di stato HTTP e `fastapi`
+    # accetta un intervallo largo (>=0.40,<0.49). Senza questo pin, due
+    # ambienti che installano lo stesso pyproject in momenti diversi
+    # ottengono starlette diverse: e' accaduto, e il sintomo e' stato una
+    # costante rinominata fra due versioni che faceva fallire la suite in CI
+    # e non in locale. Un pin su cio' di cui si usa l'API, non su tutto.
+    "starlette==0.48.0",
     "uvicorn[standard]==0.34.0",
     "sqlalchemy==2.0.36",
     "alembic==1.14.0",
@@ -31,6 +39,11 @@ packages = ["backend", "backend.routers"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# La radice del repository su sys.path, dichiarata invece che ottenuta per
+# effetto collaterale. Serve a `from tests.helpers import ...`: con
+# `python -m pytest` la cwd finisce su sys.path da sola, con l'eseguibile
+# `pytest` no, e la suite collezionava in un modo e non nell'altro.
+pythonpath = ["."]
 # Una DeprecationWarning e' un errore: serve a non accorgersi fra un anno
 # che una API usata qui era deprecata da tempo. L'eccezione sotto riguarda
 # codice di terze parti (il TestClient di Starlette passa da un alias

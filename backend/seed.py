@@ -33,7 +33,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.db import session_factory
+from backend.db import privileged_session_factory
 from backend.models import (
     AuditEvent,
     AuthorizedBy,
@@ -671,7 +671,9 @@ def database_vuoto(db: Session) -> bool:
 
 
 def main() -> None:
-    db = session_factory()()
+    # Sessione PRIVILEGIATA: il seed scrive su `tools`, `users` e
+    # `audit_events`, che per il ruolo applicativo sono in sola lettura.
+    db = privileged_session_factory()()
     try:
         if not database_vuoto(db):
             print("[seed] il database contiene gia' dei dati: niente da fare")

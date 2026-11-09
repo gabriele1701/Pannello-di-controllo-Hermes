@@ -1,0 +1,50 @@
+# Dipendenze di esercizio, con le versioni transitive risolte.
+#
+# Generato da pyproject.toml, non scritto a mano:
+#
+#     python3 -m venv /tmp/v && /tmp/v/bin/pip install . \
+#       && /tmp/v/bin/pip freeze --exclude-editable | grep -v '^hermes-panel'
+#
+# Perche' esiste, dato che pyproject.toml ha gia' le dipendenze: pyproject
+# pinna quelle DIRETTE, non le transitive. Due installazioni dello stesso
+# pyproject in momenti diversi ottengono quindi versioni diverse di cio' che
+# sta sotto -- ed e' accaduto: starlette e' passata da 0.41 a 0.48 fra
+# l'ambiente di sviluppo e la CI, con una costante di stato HTTP rinominata
+# nel mezzo, e la suite falliva in CI e non in locale.
+#
+# L'immagine installa da questo file, quindi un build di oggi e uno fra sei
+# mesi mettono dentro le stesse versioni. E' l'equivalente di
+# frontend/package-lock.json per il lato Python.
+#
+# Da rigenerare quando si cambia una dipendenza in pyproject.toml.
+Mako==1.4.3
+MarkupSafe==3.0.4
+PyYAML==6.0.3
+SQLAlchemy==2.0.36
+alembic==1.14.0
+annotated-types==0.8.0
+anyio==4.16.0
+argon2-cffi-bindings==26.1.0
+argon2-cffi==23.1.0
+cffi==2.1.1
+click==8.5.1
+fastapi==0.118.0
+h11==0.16.0
+httptools==0.9.0
+idna==3.20
+itsdangerous==2.2.0
+psycopg-binary==3.2.3
+psycopg==3.2.3
+pycparser==3.12
+pydantic-settings==2.12.0
+pydantic==2.12.5
+pydantic_core==2.41.5
+python-dotenv==1.2.4
+python-multipart==0.0.20
+starlette==0.48.0
+typing-inspection==0.4.5
+typing_extensions==4.16.0
+uvicorn==0.34.0
+uvloop==0.23.0
+watchfiles==1.3.0
+websockets==17.4
