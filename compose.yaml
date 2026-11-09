@@ -1,0 +1,66 @@
+# Orchestrazione: due servizi, `app` e `db`.
+#
+# Nessun segreto in questo file e nessun default funzionante per i segreti.
+# La sintassi ${VAR:?messaggio} fa FALLIRE `docker compose up` se la variabile
+# manca, con il messaggio indicato. E' deliberato: un default che funziona e'
+# un default che resta in produzione, dove diventa una credenziale nota.
+#
+# Avvio:
+#     cp .env.example .env     # poi riempire i tre valori obbligatori
+#     docker compose up --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hermes}
+      POSTGRES_DB: ${POSTGRES_DB:-hermes_panel}
+      # Nessun default: se POSTGRES_PASSWORD non e' definita, l'avvio fallisce.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD non impostata. Copiare .env.example in .env e generarne una: openssl rand -base64 32}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Nessuna porta pubblicata. Il database e' raggiungibile solo dalla rete
+    # interna del compose: l'unico client e' `app`, e un Postgres esposto su
+    # localhost e' un Postgres esposto a qualunque processo della macchina.
+    healthcheck:
+      # Senza healthcheck, `app` partirebbe appena il container `db` esiste, che
+      # e' prima che Postgres accetti connessioni: le migrazioni fallirebbero
+      # all'avvio a freddo e solo lì, cioe' nel caso che bisogna dimostrare.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hermes} -d ${POSTGRES_DB:-hermes_panel}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hermes}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD non impostata}@db:5432/${POSTGRES_DB:-hermes_panel}
+      # Nessun default: una chiave di firma prevedibile permetterebbe a
+      # chiunque di forgiare un cookie di sessione valido.
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY non impostata. Generarla: openssl rand -hex 32}
+      APP_ENV: ${APP_ENV:-development}
+      HERMES_ADMIN_USERNAME: ${HERMES_ADMIN_USERNAME:-operatore}
+      HERMES_ADMIN_PASSWORD: ${HERMES_ADMIN_PASSWORD:?HERMES_ADMIN_PASSWORD non impostata: senza non esisterebbe nessun operatore con cui entrare}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Il filesystem dell'immagine in sola lettura: il processo non puo'
+    # riscrivere il proprio codice. /tmp resta scrivibile in memoria, perche'
+    # alcune librerie ci appoggiano file temporanei.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+volumes:
+  pgdata:
