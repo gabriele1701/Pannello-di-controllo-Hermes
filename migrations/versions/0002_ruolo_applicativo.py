@@ -97,9 +97,16 @@ di override di un tool: l'advisory lock la nomina direttamente. Non introduce
 escalation, non tocca ``tools``, e si rilascia da solo alla fine della
 transazione.
 
-La chiave e' doppia — un nome fisso piu' l'identificativo del tool — perche'
-gli advisory lock vivono in un unico spazio di chiavi per database: una chiave
-singola potrebbe collidere con quella di un'altra funzionalita' futura.
+La chiave e' doppia — una costante che fa da spazio dei nomi, piu'
+l'identificativo del tool — perche' gli advisory lock vivono in un unico
+spazio di chiavi per database: una chiave singola potrebbe collidere con
+quella di un'altra funzionalita' futura.
+
+La costante e' un intero letterale e non ``hashtext('...')``: hashtext e' una
+funzione interna e non documentata di PostgreSQL, il cui valore non e'
+garantito stabile fra versioni maggiori. Un lock la cui chiave dipende da un
+dettaglio implementativo del server e' un lock che puo' cambiare chiave senza
+che nessuno lo decida.
 """
 
 from __future__ import annotations
@@ -157,15 +164,29 @@ def upgrade() -> None:
             -- privilegio SELECT, e il ruolo applicativo ha `tools` in sola
             -- lettura. Vedi il docstring di questa migrazione.
             --
-            -- Chiave doppia: un nome fisso per questo scopo, piu'
+            -- Chiave doppia: una costante che fa da spazio dei nomi, piu'
             -- l'identificativo del tool. Gli advisory lock condividono un solo
             -- spazio di chiavi per database, e una chiave singola potrebbe
-            -- collidere con quella di un'altra funzionalita'. Il cast a int4
-            -- regge oltre due miliardi di tool, e oltre quel numero solleva
-            -- un errore invece di collidere in silenzio.
-            PERFORM pg_advisory_xact_lock(
-                hashtext('hermes.tier_overrides'), NEW.tool_id::int
-            );
+            -- collidere con quella di un'altra funzionalita' futura.
+            --
+            -- La costante e' -18082301, cioe' il valore che
+            -- `hashtext('hermes.tier_overrides')` restituisce su PostgreSQL
+            -- 16. E' stata calcolata una volta e scritta qui come letterale,
+            -- invece di chiamare hashtext() a ogni innalzamento, perche'
+            -- hashtext NON e' una funzione documentata di PostgreSQL: e'
+            -- interna, il suo valore non e' garantito stabile fra versioni
+            -- maggiori, e un cambiamento la' dentro cambierebbe in silenzio
+            -- la chiave di un lock. Qui serve soltanto un numero costante e
+            -- non riusato altrove, quindi una costante e' piu' onesta di una
+            -- funzione che sembra darne una.
+            --
+            -- Il valore in se' non significa niente e non va ricalcolato se
+            -- qualcosa viene rinominato: deve solo restare questo.
+            --
+            -- Il cast a int4 sul secondo argomento regge oltre due miliardi
+            -- di tool, e oltre quel numero solleva un errore invece di
+            -- collidere in silenzio.
+            PERFORM pg_advisory_xact_lock(-18082301, NEW.tool_id::int);
 
             SELECT t.declared_tier, t.tool_id
               INTO tier_dichiarato, id_tool
