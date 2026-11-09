@@ -493,6 +493,43 @@ La CI verifica che il file committato corrisponda al codice delle rotte
 (`python3 scripts/esporta_openapi.py --check`), e il messaggio di errore
 contiene il comando per rigenerarlo.
 
+### I tipi dell'interfaccia si generano, non si scrivono
+
+`frontend/src/api/schema.d.ts` è prodotto da `openapi.json` con
+`openapi-typescript`:
+
+```bash
+cd frontend && npm run genera-tipi
+```
+
+Il file generato è **committato**, e non è una svista: lo stage Docker che
+compila l'interfaccia copia soltanto `frontend/`, quindi un `openapi.json` in
+radice non è visibile al build dell'immagine. `genera-tipi` è un comando di
+sviluppo, da eseguire dopo ogni cambiamento del contratto; il build non lo
+esegue.
+
+Scrivere a mano i tipi delle richieste e delle risposte sarebbe il modo in cui
+le due metà divergono senza che nessuno se ne accorga: una risposta che cambia
+forma romperebbe il browser invece di rompere il controllo di tipo.
+
+### Debito noto: le risposte di errore non sono nel contratto
+
+`openapi.json` tipizza le risposte di successo e il 422 di Pydantic
+(`HTTPValidationError`), ma **non** le risposte di errore applicative. I 401,
+403, 404 e i 409 che `backend/errors.py` produce traducendo gli SQLSTATE dei
+trigger restituiscono `{"detail": {"messaggio", "suggerimento"}}` senza che
+quella forma compaia in nessuna `responses` delle rotte.
+
+Di conseguenza `frontend/src/api/errori.ts` è l'unico punto dell'interfaccia
+che sa qualcosa che il contratto non dice: riconosce le due forme a runtime,
+in modo difensivo, invece di dichiarare un tipo che nessuno verifica. È
+annotato nel file, non nascosto.
+
+Il modo di chiuderlo sta nel backend, non nell'interfaccia: un modello
+`ErroreApplicativo` dichiarato nelle `responses` delle rotte che lo producono,
+e `openapi.json` rigenerato. È rimasto fuori da questa consegna per tempo, non
+per disaccordo.
+
 ## Sicurezza dell'applicazione
 
 - **Password con argon2id** (`argon2-cffi`, parametri predefiniti della
@@ -568,7 +605,15 @@ L'interfaccia, in un altro terminale:
 cd frontend && npm install && npm run dev
 ```
 
-Vite serve su `:5173` e inoltra `/api` a uvicorn.
+Vite serve su `:5173` e inoltra `/api` a uvicorn. In produzione non c'è
+proxy: FastAPI serve il build dalla stessa origine, quindi `/api` è una
+chiamata relativa e CORS non entra mai in gioco.
+
+Dopo un cambiamento del contratto, i tipi dell'interfaccia vanno rigenerati:
+
+```bash
+cd frontend && npm run genera-tipi
+```
 
 ### Dopo aver cambiato una rotta
 
