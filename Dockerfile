@@ -40,7 +40,8 @@ FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app
 
 # Utente di servizio, creato prima dell'installazione.
 #
@@ -54,12 +55,31 @@ RUN groupadd --system --gid 1001 hermes \
 
 WORKDIR /app
 
-# Dipendenze Python separate dal codice, per la stessa ragione di cache.
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir . \
- && pip install --no-cache-dir "psycopg[binary]==3.2.3"
+# Dipendenze da requirements.txt, che e' il lock: pyproject.toml pinna le
+# dipendenze DIRETTE, requirements.txt anche le transitive. Senza, due build
+# dello stesso commit in momenti diversi mettono dentro versioni diverse di
+# cio' che sta sotto -- ed e' accaduto, con una costante di starlette
+# rinominata fra due versioni.
+#
+# Prima del codice, cosi' questo layer resta in cache quando cambia solo il
+# codice: e' il motivo per cui il file e' separato.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY alembic.ini ./
+# Il pacchetto NON viene installato con pip, ed e' una scelta.
+#
+# Installandolo, `import backend` risolverebbe in site-packages, non in
+# /app/backend -- e setuptools non copia i file non-Python, quindi il build
+# di Vite in backend/static NON finirebbe nel pacchetto installato:
+# l'interfaccia sparirebbe e le API resterebbero in piedi, cioe' il guasto
+# piu' confondente possibile. PYTHONPATH=/app fa risolvere `backend` dove i
+# file sono davvero, compresi quelli statici.
+#
+# `uvicorn backend.main:app` e' uno script di console: sys.path[0] e' la
+# directory dell'eseguibile, non la directory di lavoro. Da qui PYTHONPATH
+# dichiarato sopra, invece di affidarsi al fatto che uvicorn inserisca la cwd
+# per conto suo -- cosa che fa, ma che e' un dettaglio interno suo.
+COPY pyproject.toml alembic.ini ./
 COPY migrations/ ./migrations/
 COPY backend/ ./backend/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh

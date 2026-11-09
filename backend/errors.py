@@ -32,7 +32,7 @@ _STATO_HTTP: dict[str, int] = {
     "HM409": status.HTTP_409_CONFLICT,
     "HM403": status.HTTP_403_FORBIDDEN,
     "HM404": status.HTTP_404_NOT_FOUND,
-    "HM422": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    "HM422": status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
 
 

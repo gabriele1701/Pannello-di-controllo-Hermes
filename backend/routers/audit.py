@@ -80,7 +80,7 @@ def elenca_eventi(
 
     if da is not None and a is not None and da >= a:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "messaggio": (
                     "L'intervallo e' vuoto: l'estremo iniziale non precede "

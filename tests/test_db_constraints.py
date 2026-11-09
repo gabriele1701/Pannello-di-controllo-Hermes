@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
-from tests.conftest import sqlstate
+from tests.helpers import sqlstate
 
 # --------------------------------------------------------------------------- #
 # Monotonia del tier

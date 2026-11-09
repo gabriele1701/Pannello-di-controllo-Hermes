@@ -448,6 +448,8 @@ backend/
   seed.py          dati di esempio
   main.py          applicazione, montaggio della SPA
   routers/         auth, tools, consents, scope, audit
+requirements.txt   il lock: anche le versioni transitive, da cui
+                   installa l'immagine
 migrations/        schema, vincoli, trigger, ruoli e concessioni
 frontend/          interfaccia
 .github/

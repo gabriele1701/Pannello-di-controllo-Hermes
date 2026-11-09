@@ -51,7 +51,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from tests.conftest import sqlstate
+from tests.helpers import sqlstate
 
 #: Tabelle che reggono gli invarianti append-only.
 TABELLE_APPEND_ONLY = ("tier_overrides", "audit_events")

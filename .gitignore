@@ -12,6 +12,10 @@ venv/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
+# Residui di setuptools: `pip install .` li lascia nell'albero di lavoro.
+build/
+dist/
+.eggs/
 
 # Frontend
 node_modules/

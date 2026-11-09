@@ -13,7 +13,6 @@ il codice da cui dipende l'avvio a freddo.
 
 from __future__ import annotations
 
-import datetime as dt
 import os
 import subprocess
 import uuid
@@ -25,15 +24,15 @@ from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.config import get_settings
+from tests.helpers import PASSWORD_PROVA, PASSWORD_RUOLO_APP_DEFAULT
 
 TEST_SECRET = "0" * 64
 
 
-#: Password del ruolo applicativo durante i test.
-#:
-#: Su un cluster locale con autenticazione `trust` non serve, ma in CI il
-#: collegamento e' TCP con scram, quindi il ruolo deve averne una.
-PASSWORD_RUOLO_APP = os.environ.get("HERMES_APP_DB_PASSWORD", "ruolo-app-di-prova")
+#: Password del ruolo applicativo durante i test, dall'ambiente se c'e'.
+PASSWORD_RUOLO_APP = os.environ.get(
+    "HERMES_APP_DB_PASSWORD", PASSWORD_RUOLO_APP_DEFAULT
+)
 
 
 def _url_privilegiata() -> str:
@@ -209,30 +208,11 @@ def perimetro_pulito(db: Session) -> Iterator[None]:
     db.commit()
 
 
-def sqlstate(exc: Exception) -> str | None:
-    """Codice SQLSTATE di un'eccezione SQLAlchemy.
-
-    I test controllano il CODICE e non il testo del messaggio: il testo e' per
-    l'operatore e puo' essere riscritto, il codice e' il contratto fra
-    database e applicazione.
-    """
-    orig = getattr(exc, "orig", None)
-    return getattr(orig, "sqlstate", None)
-
-
-def adesso() -> dt.datetime:
-    return dt.datetime.now(tz=dt.UTC)
 
 
 # --------------------------------------------------------------------------- #
 # Client HTTP
 # --------------------------------------------------------------------------- #
-
-#: Password dell'operatore dei test. Non e' un segreto: e' un valore di prova
-#: su un database di prova, e sta qui invece che in una variabile d'ambiente
-#: perche' i test devono poterla usare per autenticarsi.
-PASSWORD_PROVA = "password-di-prova-dei-test"
-
 
 @pytest.fixture
 def client(engine: Engine):
