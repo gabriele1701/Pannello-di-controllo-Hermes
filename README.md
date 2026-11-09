@@ -51,10 +51,14 @@ cd Pannello-di-controllo-Hermes
 cp .env.example .env
 ```
 
-Poi riempire i tre valori obbligatori in `.env`:
+Poi riempire i quattro valori obbligatori in `.env`:
 
 ```bash
-# password del database
+# password del ruolo proprietario del database
+openssl rand -base64 32
+
+# password del ruolo con cui gira l'applicazione (sono due ruoli distinti,
+# vedi «Due ruoli di database» più sotto)
 openssl rand -base64 32
 
 # chiave di firma del cookie di sessione
@@ -175,6 +179,92 @@ codice Python, basterebbe un'altra via d'accesso al database per aggirarlo:
 una console `psql`, uno script di manutenzione, un bug in una rotta scritta
 l'anno prossimo. **Un'applicazione si aggira, un vincolo di integrità no.**
 
+#### Due ruoli di database, e perché ne servono due
+
+La frase sopra, da sola, sarebbe più forte del vero — e nella prima versione
+di questo progetto lo era. In PostgreSQL **il proprietario di una tabella può
+disabilitarne i trigger**:
+
+```sql
+ALTER TABLE tier_overrides DISABLE TRIGGER ALL;
+-- da qui un override a `verde` passa
+```
+
+Gli invarianti di questo progetto *sono* trigger. Finché l'applicazione si
+connetteva con il ruolo che possiede le tabelle, quel comando era a
+disposizione del codice applicativo, e quindi di qualunque suo difetto. «Il
+vincolo è nel database» descriveva dove stava *scritto* il vincolo, non chi
+poteva *toglierlo*. C'è anche una seconda via, più corta:
+
+```sql
+SET session_replication_role = replica;  -- i trigger non scattano più
+```
+
+che richiede il superutente.
+
+Da qui la separazione in due ruoli, con due URL distinte:
+
+| | `MIGRATIONS_DATABASE_URL` | `DATABASE_URL` |
+|---|---|---|
+| Ruolo | proprietario (`POSTGRES_USER`) | `hermes_app` |
+| Chi lo usa | `alembic upgrade head` e il seed, all'avvio | l'applicazione in esercizio |
+| Possiede le tabelle | sì | **no** |
+| Può disabilitare un trigger | sì — è il suo compito cambiare lo schema | **no** |
+
+Che il ruolo delle migrazioni possa cambiare tutto non è un difetto: una
+migrazione serve esattamente a questo. Il punto è che il **processo che
+risponde alle richieste HTTP** non ci arriva.
+
+Le concessioni di `hermes_app` sono scritte per tabella nella migrazione
+`0002`, e quella tabella di concessioni *è* una dichiarazione del dominio:
+
+| Tabella | SELECT | INSERT | UPDATE | DELETE |
+|---|---|---|---|---|
+| `users` | ✔ | | | |
+| `tools` | ✔ | | | |
+| `tier_overrides` | ✔ | ✔ | | |
+| `audit_events` | ✔ | | | |
+| `scope_networks` | ✔ | ✔ | | ✔ |
+| `scope_aliases` | ✔ | ✔ | | ✔ |
+| `scope_consents` | ✔ | ✔ | solo `revoked_at` | |
+| `alembic_version` | | | | |
+
+Tre righe di quella tabella sono affermazioni che prima erano solo convenzioni
+del codice:
+
+- **`tools` in sola lettura.** Lo SPEC dice che l'identità di un tool è di
+  sola lettura per questa applicazione, perché la registra `hermes-core`.
+  Prima lo garantiva l'assenza di una rotta; ora l'assenza del privilegio —
+  una garanzia che non dipende da chi scriverà la prossima rotta.
+- **`audit_events` senza `INSERT`.** «Nessuna rotta permette di scrivere nel
+  log» diventa «nessuna scrittura nel log è possibile da questa connessione»,
+  che è un'affermazione diversa e più forte.
+- **`scope_consents` con `UPDATE` su una sola colonna.** L'applicazione può
+  revocare un consenso e non può cambiargli scope, agente o scadenza: un
+  consenso non si riscrive, si revoca.
+
+E `alembic_version` non è raggiungibile: l'applicazione non può mentire su
+quale versione dello schema sta girando.
+
+#### Il lock del trigger, e perché ha cambiato forma
+
+Un effetto collaterale che vale la pena raccontare, perché mostra come un
+vincolo tiri l'altro. Il trigger di monotonia prendeva `SELECT ... FOR UPDATE`
+sulla riga di `tools` per serializzare due innalzamenti concorrenti. Con un
+ruolo in sola lettura su `tools` non funziona più: in PostgreSQL **ogni**
+clausola di blocco di riga — `FOR UPDATE`, `FOR SHARE`, `FOR KEY SHARE` —
+richiede più del privilegio `SELECT`.
+
+Le alternative erano tre: concedere `UPDATE` su `tools`, che butterebbe via la
+sola lettura appena guadagnata; rendere la funzione `SECURITY DEFINER`, che
+mette un'escalation di privilegi dentro il percorso di applicazione del
+vincolo; oppure un **advisory lock di transazione**, che non richiede
+privilegi su nessuna tabella.
+
+Si è scelta la terza, e non come ripiego: il lock sulla riga di `tools` era un
+*sostituto* della cosa che si voleva davvero serializzare, cioè la catena di
+override di un tool. `pg_advisory_xact_lock` la nomina direttamente.
+
 Il codice dell'API non duplica il controllo: tenta l'inserimento e traduce il
 rifiuto del database. Due conseguenze, entrambe volute:
 
@@ -216,6 +306,31 @@ TRUNCATE audit_events;
 Il `TRUNCATE` ha un trigger suo: non passa dai trigger di riga, quindi
 senza un trigger di statement «append-only» sarebbe vero solo per le
 operazioni che qualcuno si è ricordato di coprire.
+
+E con il ruolo applicativo, che è quello con cui gira il processo che risponde
+alle richieste:
+
+```bash
+docker compose exec -e PGPASSWORD="$HERMES_APP_DB_PASSWORD" db   psql -U hermes_app -d hermes_panel
+```
+
+```sql
+ALTER TABLE tier_overrides DISABLE TRIGGER ALL;
+-- ERRORE: must be owner of table tier_overrides
+
+SET session_replication_role = 'replica';
+-- ERRORE: permission denied to set parameter "session_replication_role"
+
+INSERT INTO audit_events (correlation_id, event_type, outcome)
+VALUES (gen_random_uuid(), 'tool_call', 'ok');
+-- ERRORE: permission denied for table audit_events
+```
+
+Tutte queste verifiche, insieme, sono in uno script che si esegue da solo:
+
+```bash
+./.github/scripts/verifica_database.sh
+```
 
 Un dettaglio che vale la pena notare: `tier` è un `ENUM` nativo di PostgreSQL,
 e in un `ENUM` l'ordine di dichiarazione **è** l'ordinamento del tipo. Quindi
@@ -333,9 +448,13 @@ backend/
   seed.py          dati di esempio
   main.py          applicazione, montaggio della SPA
   routers/         auth, tools, consents, scope, audit
-migrations/        schema, vincoli, trigger
+migrations/        schema, vincoli, trigger, ruoli e concessioni
 frontend/          interfaccia
-tests/             137 test: vincoli in SQL diretto + contratti delle API
+.github/
+  workflows/ci.yml suite, build dell'immagine, avvio a freddo
+  scripts/         le verifiche, eseguibili anche a mano
+tests/             174 test: vincoli in SQL diretto, privilegi dei ruoli,
+                   contratti delle API
 ```
 
 ## Sicurezza dell'applicazione
@@ -365,6 +484,11 @@ tests/             137 test: vincoli in SQL diretto + contratti delle API
   di far arrivare testo del client dentro una clausola SQL. I filtri del log
   sono tipizzati uno per uno, e la paginazione ha un tetto: senza,
   `limite=1000000` sarebbe una richiesta che esaurisce la memoria del server.
+- **Due ruoli di database.** L'applicazione in esercizio si connette con
+  `hermes_app`, che non possiede le tabelle e quindi non può disabilitarne i
+  trigger, non è superutente e quindi non può cambiare
+  `session_replication_role`, e non ha `CREATE` sullo schema e quindi non può
+  costruirsi scappatoie. Le concessioni sono minime e scritte per tabella.
 - **Il container dell'app non gira come root,** ha il filesystem in sola
   lettura, `no-new-privileges` e tutte le capability rimosse. Il codice è di
   root e il processo non può riscrivere i propri file.
@@ -381,15 +505,26 @@ tests/             137 test: vincoli in SQL diretto + contratti delle API
 Serve un PostgreSQL 16 raggiungibile.
 
 ```bash
-export DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
+# ruolo proprietario: migrazioni e seed
+export MIGRATIONS_DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
+export HERMES_APP_DB_PASSWORD="una-password-di-sviluppo"
 export APP_SECRET_KEY="$(openssl rand -hex 32)"
 export HERMES_ADMIN_PASSWORD="una-password-di-sviluppo"
 
 pip install -e '.[dev]'
-alembic upgrade head
+alembic upgrade head        # crea anche il ruolo hermes_app
 python -m backend.seed
+
+# ruolo applicativo: il server
+export DATABASE_URL="postgresql+psycopg://hermes_app:una-password-di-sviluppo@localhost:5432/hermes_panel"
 uvicorn backend.main:app --reload
 ```
+
+Se `MIGRATIONS_DATABASE_URL` non è impostata, migrazioni e seed ricadono su
+`DATABASE_URL`. È una comodità per lo sviluppo locale, dove spesso esiste un
+solo ruolo — **non** una configurazione valida in esercizio: il `compose`
+imposta le due URL distinte e rende obbligatoria la password del ruolo
+applicativo, quindi il ripiego non si verifica in un dispiegamento.
 
 L'interfaccia, in un altro terminale:
 
@@ -402,7 +537,10 @@ Vite serve su `:5173` e inoltra `/api` a uvicorn.
 ### Test
 
 ```bash
-export DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
+# il ruolo proprietario: la suite crea lo schema e poi punta l'applicazione
+# sul ruolo hermes_app da sola
+export TEST_DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
+export HERMES_APP_DB_PASSWORD="una-password-di-sviluppo"
 pytest
 ```
 
@@ -417,7 +555,55 @@ anche il codice da cui dipende l'avvio a freddo.
 
 `tests/test_db_constraints.py` interroga il database **in SQL diretto**, senza
 passare dall'API: è la metà del criterio che chiede che un declassamento sia
-rifiutato anche eseguendo la query a mano.
+rifiutato anche eseguendo la query a mano. Gira con il ruolo proprietario,
+quindi prova che i trigger rifiutano anche chi possiede le tabelle.
+
+`tests/test_privilegi_ruolo.py` prova la separazione dei ruoli: che
+`hermes_app` non possa disabilitare un trigger, rimuoverlo, sostituirne la
+funzione, cambiare `session_replication_role`, scrivere nel log o modificare un
+tool — e, come controprova, che le concessioni gli bastino per fare il proprio
+lavoro.
+
+La prova più larga però è un'altra: **l'intera suite delle API gira con il
+ruolo `hermes_app`**, perché la fixture che prepara lo schema punta
+l'applicazione su quel ruolo. Se mancasse una concessione, i test delle API lo
+troverebbero.
+
+---
+
+## Integrazione continua
+
+`.github/workflows/ci.yml` gira a ogni push, con tre lavori:
+
+1. **`suite`** — i 174 test su un PostgreSQL 16 di servizio, con
+   l'applicazione che gira come `hermes_app`.
+2. **`immagine`** — `docker compose build --no-cache`, più la verifica che la
+   `compose` sia YAML valido, che l'avvio *fallisca* senza i segreti, e che il
+   container non giri come root.
+3. **`freddo`** — l'avvio vero dello stack da un `.env` scritto come lo
+   scriverebbe una persona seguendo questo README, poi tutte le verifiche
+   contro lo stack in piedi.
+
+Il terzo lavoro è quello che conta, perché è il criterio §11 numero uno: *il
+primo* criterio di accettazione non si verifica scrivendo codice, si verifica
+eseguendolo su una macchina pulita. Le verifiche stanno in due script
+eseguibili anche a mano, e non dentro i passi del workflow — un file si prova
+in locale prima di spingerlo, un passo di workflow si prova soltanto facendo
+girare la CI:
+
+```bash
+python3 .github/scripts/verifica_stack.py   --base http://127.0.0.1:8000 --utente operatore --password "$HERMES_ADMIN_PASSWORD"
+```
+
+```bash
+./.github/scripts/verifica_database.sh
+```
+
+Il primo verifica via HTTP i dati di esempio, la copertura dei due assi del
+rischio, la divergenza fra tier dichiarato ed effettivo, il log con tutti e
+quattro gli esiti, e i criteri §11. Il secondo apre due console sul database —
+una per ruolo — e verifica che i trigger rifiutino anche il proprietario, e che
+il ruolo applicativo non arrivi nemmeno al trigger.
 
 ---
 
