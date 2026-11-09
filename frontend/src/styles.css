@@ -1,37 +1,398 @@
+/* Fogli di stile del pannello.
+ *
+ * CSS scritto a mano, nessun framework. Le ragioni sono due: una libreria di
+ * utility renderebbe questo file illeggibile senza toglierne la lunghezza, e
+ * questa interfaccia ha sei schermate con la stessa struttura, quindi le
+ * classi utili sono poche e si nominano.
+ *
+ * L'elemento portante e' la fascia di classificazione: una barra verticale
+ * colorata sul bordo sinistro di righe e riquadri, che porta il tier. E' la
+ * ragione per cui la divergenza fra tier dichiarato ed effettivo si vedra'
+ * prima di leggerla. Tutto il resto e' volutamente quieto: nessuna ombra,
+ * raggi minimi, gerarchie portate dal bordo e dal peso del testo.
+ *
+ * Denso di proposito: e' uno strumento da scrivania, consultato da chi sa
+ * cosa sta guardando, non una pagina di presentazione.
+ */
+
 :root {
+  /* Superfici, dalla piu' profonda alla piu' alta. */
   --sfondo: #11141a;
   --superficie: #1a1f28;
+  --superficie-alta: #212836;
   --bordo: #2b323d;
+  --bordo-vivo: #3b4555;
+
   --testo: #e6e9ee;
   --testo-tenue: #9aa4b2;
+  --testo-fioco: #6d7889;
+
+  /* I tre tier. L'ordinamento e' significativo, e i colori lo seguono.
+     Le varianti deboli servono agli sfondi: lo stesso colore a piena
+     saturazione dietro del testo lo renderebbe illeggibile. */
   --verde: #3fa96b;
+  --verde-debole: #16301f;
   --giallo: #d2a132;
+  --giallo-debole: #33280e;
   --rosso: #c4503f;
+  --rosso-debole: #331713;
+
   --accento: #5b8dd6;
+  --accento-debole: #16243a;
+
+  --raggio: 3px;
+  --colonna: 72rem;
+
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, monospace;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
 
 body {
   margin: 0;
   background: var(--sfondo);
   color: var(--testo);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.9375rem;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-.shell {
-  max-width: 60rem;
-  margin: 0 auto;
-  padding: 2rem 1rem;
+/* Il fuoco da tastiera resta visibile ovunque. Toglierlo e' il modo piu'
+   rapido di rendere un'applicazione inservibile senza mouse. */
+:focus-visible {
+  outline: 2px solid var(--accento);
+  outline-offset: 2px;
 }
 
-.nota { color: var(--testo-tenue); }
+a {
+  color: var(--accento);
+  text-decoration-color: color-mix(in srgb, var(--accento) 45%, transparent);
+  text-underline-offset: 2px;
+}
 
-code {
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.875em;
+}
+
+/* --------------------------------------------------------------------- */
+/* Telaio                                                                 */
+/* --------------------------------------------------------------------- */
+
+.telaio {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.testata {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 0 1.5rem;
+  border-bottom: 1px solid var(--bordo);
   background: var(--superficie);
+}
+
+.testata__identita {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+}
+
+.testata__marchio {
+  font-size: 1.0625rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.testata__sottotitolo {
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+}
+
+.testata__sessione {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.testata__operatore {
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+}
+
+/* La voce attiva e' marcata da una riga sotto, non da uno sfondo: con
+   quattro voci sole, un blocco pieno pesa piu' dell'informazione che da'. */
+.navigazione {
+  display: flex;
+  gap: 0.25rem;
+  align-self: stretch;
+}
+
+.navigazione__voce {
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  border-bottom: 2px solid transparent;
+  color: var(--testo-tenue);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.navigazione__voce:hover {
+  color: var(--testo);
+}
+
+.navigazione__voce--attiva {
+  border-bottom-color: var(--accento);
+  color: var(--testo);
+}
+
+.pagina {
+  flex: 1;
+  width: 100%;
+  max-width: var(--colonna);
+  margin: 0 auto;
+  padding: 1.75rem 1.5rem 3rem;
+}
+
+.pagina--centrata {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagina__titolo {
+  margin: 0 0 1.25rem;
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.pie {
+  max-width: var(--colonna);
+  width: 100%;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 2rem;
+  border-top: 1px solid var(--bordo);
+  color: var(--testo-fioco);
+  font-size: 0.8125rem;
+}
+
+/* --------------------------------------------------------------------- */
+/* Riquadri e stati                                                       */
+/* --------------------------------------------------------------------- */
+
+.riquadro {
   border: 1px solid var(--bordo);
-  border-radius: 3px;
-  padding: 0.1em 0.35em;
-  font-size: 0.9em;
+  border-radius: var(--raggio);
+  background: var(--superficie);
+  padding: 1.25rem;
+}
+
+.stato {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  background: var(--superficie);
+  padding: 0.875rem 1rem;
+  font-size: 0.875rem;
+}
+
+.stato--attesa {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--testo-tenue);
+}
+
+/* Rotazione continua: e' l'unica animazione dell'interfaccia, e segnala
+   che qualcosa sta accadendo. Chi ha chiesto meno movimento vede una
+   barra ferma, che dice la stessa cosa. */
+.stato__indicatore {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--bordo-vivo);
+  border-top-color: var(--accento);
+  border-radius: 50%;
+  animation: gira 0.7s linear infinite;
+}
+
+@keyframes gira {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stato__indicatore {
+    animation: none;
+    border-top-color: var(--bordo-vivo);
+  }
+}
+
+/* La fascia di classificazione, qui nella sua forma d'allarme. */
+.stato--errore {
+  border-color: color-mix(in srgb, var(--rosso) 45%, var(--bordo));
+  border-left: 3px solid var(--rosso);
+  background: var(--rosso-debole);
+}
+
+.stato__titolo {
+  margin: 0;
+  font-weight: 550;
+}
+
+.stato__suggerimento {
+  margin: 0;
+  color: var(--testo-tenue);
+}
+
+/* L'etichetta del suggerimento non e' un ornamento: distingue «cosa e'
+   successo» da «cosa fare», che il database manda come due campi distinti. */
+.stato__etichetta {
+  margin-right: 0.5rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--bordo-vivo);
+  border-radius: var(--raggio);
+  color: var(--testo-fioco);
+  font-size: 0.75rem;
+}
+
+.stato__campi {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--testo-tenue);
+}
+
+.stato__campi code {
+  color: var(--testo);
+}
+
+.stato--vuoto {
+  color: var(--testo-tenue);
+  background: transparent;
+  border-style: dashed;
+}
+
+/* --------------------------------------------------------------------- */
+/* Controlli                                                              */
+/* --------------------------------------------------------------------- */
+
+.bottone {
+  border: 1px solid var(--bordo-vivo);
+  border-radius: var(--raggio);
+  background: var(--superficie-alta);
+  color: var(--testo);
+  padding: 0.375rem 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.bottone:hover:not(:disabled) {
+  border-color: var(--testo-fioco);
+}
+
+.bottone:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.bottone--primario {
+  border-color: var(--accento);
+  background: var(--accento-debole);
+  color: var(--testo);
+  padding: 0.5rem 0.875rem;
+  font-weight: 550;
+}
+
+.bottone--tenue {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--testo-tenue);
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.campo__etichetta {
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+}
+
+.campo__ingresso {
+  border: 1px solid var(--bordo-vivo);
+  border-radius: var(--raggio);
+  background: var(--sfondo);
+  color: var(--testo);
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.campo__ingresso:focus-visible {
+  border-color: var(--accento);
+}
+
+/* --------------------------------------------------------------------- */
+/* Accesso                                                                */
+/* --------------------------------------------------------------------- */
+
+.accesso {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 2rem 1.5rem;
+}
+
+.accesso__modulo {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: min(23rem, 100%);
+  padding: 1.75rem;
+  /* La fascia in testa, come sul dorso di un fascicolo. */
+  border-top: 2px solid var(--accento);
+}
+
+.accesso__titolo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 500;
+  color: var(--testo-tenue);
+}
+
+.accesso__marchio {
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--testo);
+}
+
+.accesso__nota {
+  margin: 0;
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+  line-height: 1.45;
 }
