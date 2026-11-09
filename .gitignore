@@ -1,0 +1,26 @@
+# Segreti: solo .env.example va versionato
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Build servito da FastAPI: prodotto, non sorgente
+backend/static/
+
+# Stato locale
+*.log
+.DS_Store

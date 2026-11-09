@@ -1,0 +1,41 @@
+[project]
+name = "hermes-panel"
+version = "0.1.0"
+description = "Pannello di controllo della toolbox di sicurezza Hermes"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.118.0",
+    "uvicorn[standard]==0.34.0",
+    "sqlalchemy==2.0.36",
+    "alembic==1.14.0",
+    "psycopg[binary]==3.2.3",
+    "pydantic==2.12.5",
+    "pydantic-settings==2.12.0",
+    "argon2-cffi==23.1.0",
+    "itsdangerous==2.2.0",
+    "python-multipart==0.0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "httpx==0.28.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["backend", "backend.routers"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Una DeprecationWarning e' un errore: serve a non accorgersi fra un anno
+# che una API usata qui era deprecata da tempo. L'eccezione sotto riguarda
+# codice di terze parti (il TestClient di Starlette passa da un alias
+# deprecato di anyio), su cui non si puo' intervenire da qui.
+filterwarnings = [
+    "error::DeprecationWarning",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
