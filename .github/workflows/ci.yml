@@ -11,14 +11,16 @@
 # livello di quoting annidato, e un file si prova in locale prima di spingerlo
 # mentre un passo di workflow si prova soltanto facendo girare la CI.
 #
-# Tre lavori, in ordine di costo crescente:
+# Quattro lavori, in ordine di costo crescente:
 #
-#   1. suite    — i test su un PostgreSQL di servizio. Veloce, trova quasi tutto.
-#   2. immagine — docker compose build. Trova cio' che si rompe solo dentro il
-#                 container: npm ci su musl, l'utente non root, le dipendenze.
-#   3. freddo   — l'avvio vero dello stack, da zero, con i dati di esempio.
-#                 E' l'unico che verifica l'entrypoint, l'healthcheck, l'ordine
-#                 fra migrazioni e seed, e la separazione dei ruoli in esercizio.
+#   1. contratto — openapi.json corrisponde al codice. Nessun database,
+#                  nessun Docker: il piu' veloce a dire che qualcosa non torna.
+#   2. suite     — i test su un PostgreSQL di servizio. Trova quasi tutto.
+#   3. immagine  — docker compose build. Trova cio' che si rompe solo dentro il
+#                  container: npm ci su musl, l'utente non root, le dipendenze.
+#   4. freddo    — l'avvio vero dello stack, da zero, con i dati di esempio.
+#                  E' l'unico che verifica l'entrypoint, l'healthcheck, l'ordine
+#                  fra migrazioni e seed, e la separazione dei ruoli in esercizio.
 
 name: CI
 
@@ -96,6 +98,31 @@ jobs:
         # proprietario, la suite continuerebbe a passare. Questo passo rende
         # l'esito leggibile nel log della CI invece che implicito.
         run: pytest tests/test_privilegi_ruolo.py -v --no-header
+
+  contratto:
+    name: Contratto HTTP (openapi.json)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Nessun servizio e nessun Docker: lo schema si genera importando
+    # l'applicazione, senza aprire connessioni. E' quindi il lavoro piu'
+    # veloce a dire che qualcosa non torna.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa le dipendenze
+        run: pip install -e .
+
+      - name: openapi.json corrisponde al codice delle rotte
+        # Il confronto e il messaggio di errore stanno nello script, non
+        # qui: cosi' chi lavora in locale incontra lo stesso messaggio della
+        # CI, con dentro il comando esatto per rigenerare.
+        run: python3 scripts/esporta_openapi.py --check
 
   immagine:
     name: Build dell'immagine

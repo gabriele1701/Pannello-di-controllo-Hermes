@@ -448,16 +448,45 @@ backend/
   seed.py          dati di esempio
   main.py          applicazione, montaggio della SPA
   routers/         auth, tools, consents, scope, audit
+openapi.json       il contratto fra backend e frontend: si rigenera,
+                   non si modifica a mano
 requirements.txt   il lock: anche le versioni transitive, da cui
                    installa l'immagine
 migrations/        schema, vincoli, trigger, ruoli e concessioni
 frontend/          interfaccia
+scripts/           strumenti di sviluppo (esportazione del contratto)
 .github/
-  workflows/ci.yml suite, build dell'immagine, avvio a freddo
+  workflows/ci.yml contratto, suite, build dell'immagine, avvio a freddo
   scripts/         le verifiche, eseguibili anche a mano
-tests/             174 test: vincoli in SQL diretto, privilegi dei ruoli,
+tests/             175 test: vincoli in SQL diretto, privilegi dei ruoli,
                    contratti delle API
 ```
+
+## Il contratto fra backend e frontend
+
+[`openapi.json`](openapi.json) **è il contratto fra backend e interfaccia. Si
+rigenera, non si modifica a mano:**
+
+```bash
+python3 scripts/esporta_openapi.py
+```
+
+Lo script importa l'applicazione e chiama `app.openapi()` — nessun server da
+avviare, nessuna connessione al database. Scrive con le chiavi ordinate e
+l'indentazione fissa, quindi due rigenerazioni dello stesso codice producono
+byte identici e la diff mostra soltanto i cambiamenti veri.
+
+Esiste come file versionato e non solo come schema servito dall'applicazione
+perché backend e interfaccia vengono scritti in momenti diversi, e questo
+documento è il punto in cui si incontrano. Finché vive solo in memoria del
+processo è una convenzione: chi scrive il frontend lo legge una volta e poi se
+lo ricorda, e quando il backend cambia una risposta nessuno se ne accorge
+finché qualcosa non si rompe nel browser. Versionato, un cambiamento del
+contratto compare nella diff di una pull request.
+
+La CI verifica che il file committato corrisponda al codice delle rotte
+(`python3 scripts/esporta_openapi.py --check`), e il messaggio di errore
+contiene il comando per rigenerarlo.
 
 ## Sicurezza dell'applicazione
 
@@ -536,6 +565,15 @@ cd frontend && npm install && npm run dev
 
 Vite serve su `:5173` e inoltra `/api` a uvicorn.
 
+### Dopo aver cambiato una rotta
+
+```bash
+python3 scripts/esporta_openapi.py
+```
+
+e committare `openapi.json` insieme al cambiamento: è il contratto, e la CI
+rifiuta un disallineamento fra il file e il codice.
+
 ### Test
 
 ```bash
@@ -575,18 +613,21 @@ troverebbero.
 
 ## Integrazione continua
 
-`.github/workflows/ci.yml` gira a ogni push, con tre lavori:
+`.github/workflows/ci.yml` gira a ogni push, con quattro lavori:
 
-1. **`suite`** — i 174 test su un PostgreSQL 16 di servizio, con
+1. **`contratto`** — `openapi.json` corrisponde al codice delle rotte. Nessun
+   database e nessun Docker, quindi è il più veloce a dire che qualcosa non
+   torna.
+2. **`suite`** — i 175 test su un PostgreSQL 16 di servizio, con
    l'applicazione che gira come `hermes_app`.
-2. **`immagine`** — `docker compose build --no-cache`, più la verifica che la
+3. **`immagine`** — `docker compose build --no-cache`, più la verifica che la
    `compose` sia YAML valido, che l'avvio *fallisca* senza i segreti, e che il
    container non giri come root.
-3. **`freddo`** — l'avvio vero dello stack da un `.env` scritto come lo
+4. **`freddo`** — l'avvio vero dello stack da un `.env` scritto come lo
    scriverebbe una persona seguendo questo README, poi tutte le verifiche
    contro lo stack in piedi.
 
-Il terzo lavoro è quello che conta, perché è il criterio §11 numero uno: *il
+L'ultimo lavoro è quello che conta di più, perché è il criterio §11 numero uno: *il
 primo* criterio di accettazione non si verifica scrivendo codice, si verifica
 eseguendolo su una macchina pulita. Le verifiche stanno in due script
 eseguibili anche a mano, e non dentro i passi del workflow — un file si prova

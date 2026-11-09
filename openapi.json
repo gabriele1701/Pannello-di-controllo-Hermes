@@ -1,0 +1,1936 @@
+{
+  "components": {
+    "schemas": {
+      "AliasRichiesta": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 45,
+            "minLength": 7,
+            "title": "Address",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 2,
+            "pattern": "^[a-z0-9]+([.-][a-z0-9]+)*$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "address"
+        ],
+        "title": "AliasRichiesta",
+        "type": "object"
+      },
+      "AliasRisposta": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "address"
+        ],
+        "title": "AliasRisposta",
+        "type": "object"
+      },
+      "AuthorizedBy": {
+        "description": "Origine dell'autorizzazione di una invocazione.",
+        "enum": [
+          "policy",
+          "user",
+          "none"
+        ],
+        "title": "AuthorizedBy",
+        "type": "string"
+      },
+      "CallOutcome": {
+        "description": "Esito di una invocazione.\n\n``DENIED`` separato da ``ERROR``: un rifiuto deliberato della policy non\ne' un guasto. Contarli insieme confonderebbe «la macchina ha fallito» con\n«la policy ha detto no».",
+        "enum": [
+          "ok",
+          "error",
+          "denied",
+          "pending"
+        ],
+        "title": "CallOutcome",
+        "type": "string"
+      },
+      "CatenaEventi": {
+        "description": "Catena completa di un `correlation_id`, in ordine cronologico.",
+        "properties": {
+          "correlation_id": {
+            "format": "uuid",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "eventi": {
+            "items": {
+              "$ref": "#/components/schemas/EventoRisposta"
+            },
+            "title": "Eventi",
+            "type": "array"
+          }
+        },
+        "required": [
+          "correlation_id",
+          "eventi"
+        ],
+        "title": "CatenaEventi",
+        "type": "object"
+      },
+      "ConsensoRichiesta": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/OwnerAgent"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          },
+          "tool_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Id"
+          }
+        },
+        "required": [
+          "agent",
+          "scope",
+          "expires_at"
+        ],
+        "title": "ConsensoRichiesta",
+        "type": "object"
+      },
+      "ConsensoRisposta": {
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/OwnerAgent"
+          },
+          "agente_etichetta": {
+            "title": "Agente Etichetta",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "granted_at": {
+            "format": "date-time",
+            "title": "Granted At",
+            "type": "string"
+          },
+          "granted_by": {
+            "title": "Granted By",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "stato": {
+            "enum": [
+              "attivo",
+              "scaduto",
+              "revocato"
+            ],
+            "title": "Stato",
+            "type": "string"
+          },
+          "tool_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Id"
+          },
+          "tool_identificativo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Identificativo"
+          }
+        },
+        "required": [
+          "id",
+          "tool_id",
+          "tool_identificativo",
+          "agent",
+          "agente_etichetta",
+          "scope",
+          "granted_by",
+          "granted_at",
+          "expires_at",
+          "revoked_at",
+          "stato"
+        ],
+        "title": "ConsensoRisposta",
+        "type": "object"
+      },
+      "EventoRisposta": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerAgent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorized_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthorizedBy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "correlation_id": {
+            "format": "uuid",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/LogAction"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/CallOutcome"
+          },
+          "peer_correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Correlation Id"
+          },
+          "secret_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Name"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "tier_effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskTier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Id"
+          }
+        },
+        "required": [
+          "id",
+          "correlation_id",
+          "peer_correlation_id",
+          "event_type",
+          "agent",
+          "tool_id",
+          "target",
+          "tier_effective",
+          "authorized_by",
+          "secret_name",
+          "outcome",
+          "detail",
+          "occurred_at"
+        ],
+        "title": "EventoRisposta",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LogAction": {
+        "description": "Tipo di evento del log. Tutti quelli emessi da hermes-core.",
+        "enum": [
+          "agent_invoked",
+          "agent_result",
+          "tool_registered",
+          "tool_registration_rejected",
+          "tool_alias_detected",
+          "override_set",
+          "override_rejected",
+          "override_store_loaded",
+          "override_not_persisted",
+          "concurrency_not_shared",
+          "tool_call",
+          "secret_access"
+        ],
+        "title": "LogAction",
+        "type": "string"
+      },
+      "LoginRichiesta": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRichiesta",
+        "type": "object"
+      },
+      "OperatoreRisposta": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "created_at"
+        ],
+        "title": "OperatoreRisposta",
+        "type": "object"
+      },
+      "OverrideRichiesta": {
+        "additionalProperties": false,
+        "description": "Innalzamento richiesto dall'operatore.\n\nNon c'e' un campo per abbassare, e non c'e' un campo `source`: un\noverride creato da questa interfaccia e' per definizione registrato\nnello store, mentre `config` descrive una riga scritta nella\nconfigurazione versionata di hermes-core, che da qui non si tocca.",
+        "properties": {
+          "reason": {
+            "maxLength": 1024,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/RiskTier"
+          }
+        },
+        "required": [
+          "tier",
+          "reason"
+        ],
+        "title": "OverrideRichiesta",
+        "type": "object"
+      },
+      "OverrideRisposta": {
+        "description": "Riga dello storico degli innalzamenti.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OverrideSource"
+          },
+          "source_descrizione": {
+            "title": "Source Descrizione",
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/RiskTier"
+          }
+        },
+        "required": [
+          "id",
+          "tier",
+          "reason",
+          "source",
+          "source_descrizione",
+          "created_by",
+          "created_at"
+        ],
+        "title": "OverrideRisposta",
+        "type": "object"
+      },
+      "OverrideSource": {
+        "description": "Da dove viene un override registrato, e quindi quanto dura.",
+        "enum": [
+          "config",
+          "persistent"
+        ],
+        "title": "OverrideSource",
+        "type": "string"
+      },
+      "OwnerAgent": {
+        "description": "Agente proprietario di un tool. Vocabolario chiuso.",
+        "enum": [
+          "orchestrator",
+          "echo_dummy",
+          "vuln_assessment",
+          "pentest_kali"
+        ],
+        "title": "OwnerAgent",
+        "type": "string"
+      },
+      "PaginaEventi": {
+        "description": "Pagina del log.\n\n`totale` e' il numero di righe che soddisfano i filtri, non quelle\nrestituite: senza, l'interfaccia non puo' dire quante pagine ci sono.",
+        "properties": {
+          "eventi": {
+            "items": {
+              "$ref": "#/components/schemas/EventoRisposta"
+            },
+            "title": "Eventi",
+            "type": "array"
+          },
+          "limite": {
+            "title": "Limite",
+            "type": "integer"
+          },
+          "scarto": {
+            "title": "Scarto",
+            "type": "integer"
+          },
+          "totale": {
+            "title": "Totale",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totale",
+          "limite",
+          "scarto",
+          "eventi"
+        ],
+        "title": "PaginaEventi",
+        "type": "object"
+      },
+      "ReteRichiesta": {
+        "additionalProperties": false,
+        "properties": {
+          "cidr": {
+            "maxLength": 43,
+            "minLength": 9,
+            "title": "Cidr",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cidr",
+          "label"
+        ],
+        "title": "ReteRichiesta",
+        "type": "object"
+      },
+      "ReteRisposta": {
+        "properties": {
+          "cidr": {
+            "title": "Cidr",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "cidr",
+          "label"
+        ],
+        "title": "ReteRisposta",
+        "type": "object"
+      },
+      "RiskTier": {
+        "description": "Asse tecnico del rischio. L'ordinamento e' significativo.",
+        "enum": [
+          "verde",
+          "giallo",
+          "rosso"
+        ],
+        "title": "RiskTier",
+        "type": "string"
+      },
+      "TargetKind": {
+        "description": "Che bersaglio accetta un tool, e quindi se il perimetro gli si applica.",
+        "enum": [
+          "none",
+          "host"
+        ],
+        "title": "TargetKind",
+        "type": "string"
+      },
+      "ToolDettaglio": {
+        "description": "Dettaglio di un tool: identita', i due assi, storico degli override.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/OwnerAgent"
+          },
+          "agente_etichetta": {
+            "title": "Agente Etichetta",
+            "type": "string"
+          },
+          "declared_tier": {
+            "$ref": "#/components/schemas/RiskTier"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "effective_tier": {
+            "$ref": "#/components/schemas/RiskTier"
+          },
+          "exec_args": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exec Args",
+            "type": "array"
+          },
+          "exec_path": {
+            "title": "Exec Path",
+            "type": "string"
+          },
+          "exec_sha256": {
+            "title": "Exec Sha256",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_override_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Override At"
+          },
+          "override_count": {
+            "title": "Override Count",
+            "type": "integer"
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/OverrideRisposta"
+            },
+            "title": "Overrides",
+            "type": "array"
+          },
+          "personal_data": {
+            "title": "Personal Data",
+            "type": "boolean"
+          },
+          "registered_at": {
+            "format": "date-time",
+            "title": "Registered At",
+            "type": "string"
+          },
+          "requires_container": {
+            "title": "Requires Container",
+            "type": "boolean"
+          },
+          "target_kind": {
+            "$ref": "#/components/schemas/TargetKind"
+          },
+          "tier_disponibili": {
+            "items": {
+              "$ref": "#/components/schemas/RiskTier"
+            },
+            "title": "Tier Disponibili",
+            "type": "array"
+          },
+          "tier_innalzato": {
+            "title": "Tier Innalzato",
+            "type": "boolean"
+          },
+          "tool_id": {
+            "title": "Tool Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tool_id",
+          "agent",
+          "agente_etichetta",
+          "declared_tier",
+          "effective_tier",
+          "tier_innalzato",
+          "personal_data",
+          "requires_container",
+          "target_kind",
+          "description",
+          "override_count",
+          "last_override_at",
+          "exec_path",
+          "exec_sha256",
+          "exec_args",
+          "registered_at",
+          "overrides",
+          "tier_disponibili"
+        ],
+        "title": "ToolDettaglio",
+        "type": "object"
+      },
+      "ToolRiepilogo": {
+        "description": "Riga del catalogo.\n\nPorta **entrambi** i tier. L'interfaccia evidenzia la divergenza fra\ndichiarato ed effettivo: e' il segnale che un override e' attivo, e\nmostrare solo l'effettivo nasconderebbe che qualcuno e' intervenuto.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/OwnerAgent"
+          },
+          "agente_etichetta": {
+            "title": "Agente Etichetta",
+            "type": "string"
+          },
+          "declared_tier": {
+            "$ref": "#/components/schemas/RiskTier"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "effective_tier": {
+            "$ref": "#/components/schemas/RiskTier"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_override_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Override At"
+          },
+          "override_count": {
+            "title": "Override Count",
+            "type": "integer"
+          },
+          "personal_data": {
+            "title": "Personal Data",
+            "type": "boolean"
+          },
+          "requires_container": {
+            "title": "Requires Container",
+            "type": "boolean"
+          },
+          "target_kind": {
+            "$ref": "#/components/schemas/TargetKind"
+          },
+          "tier_innalzato": {
+            "title": "Tier Innalzato",
+            "type": "boolean"
+          },
+          "tool_id": {
+            "title": "Tool Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tool_id",
+          "agent",
+          "agente_etichetta",
+          "declared_tier",
+          "effective_tier",
+          "tier_innalzato",
+          "personal_data",
+          "requires_container",
+          "target_kind",
+          "description",
+          "override_count",
+          "last_override_at"
+        ],
+        "title": "ToolRiepilogo",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Registro dello stato della toolbox di sicurezza Hermes: tier dei tool, innalzamenti, consensi per scope, perimetro dei bersagli e vista del log d'audit. Un solo utente: l'operatore umano.",
+    "title": "Pannello di controllo Hermes",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/audit": {
+      "get": {
+        "description": "Log filtrabile e paginato, dal piu' recente.\n\nOgni filtro e' tipizzato: gli enum arrivano come enum, le date come date,\n``tool_id`` come stringa con un tetto di lunghezza. Non esiste un\nparametro di ordinamento, ne' uno di ricerca libera: entrambi sarebbero\nun modo di far arrivare del testo del client dentro una clausola SQL.\n\nL'ordinamento e' fisso: ``occurred_at`` discendente, con ``id``\ndiscendente a parita'. Il secondo criterio non e' decorativo — piu'\neventi della stessa catena possono avere lo stesso istante al\nmicrosecondo, e senza un criterio di spareggio la paginazione potrebbe\nrestituire la stessa riga su due pagine e perderne un'altra.",
+        "operationId": "elenca_eventi_api_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "correlation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Correlation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OwnerAgent"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tool Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LogAction"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CallOutcome"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome"
+            }
+          },
+          {
+            "description": "Estremo iniziale, incluso.",
+            "in": "query",
+            "name": "da",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Estremo iniziale, incluso.",
+              "title": "Da"
+            }
+          },
+          {
+            "description": "Estremo finale, escluso.",
+            "in": "query",
+            "name": "a",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Estremo finale, escluso.",
+              "title": "A"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limite",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limite",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scarto",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Scarto",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginaEventi"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Elenca Eventi",
+        "tags": [
+          "log"
+        ]
+      }
+    },
+    "/api/audit/{correlation_id}": {
+      "get": {
+        "description": "La catena completa di un ``correlation_id``, in ordine cronologico.\n\nCrescente, non decrescente come l'elenco: una catena si legge dall'inizio\n— l'agente invocato, le chiamate ai tool, il risultato — perche' e' una\nsequenza causale e non un elenco di righe recenti.\n\nNon e' paginata: una catena e' lunga quanto e' lunga, e troncarla\nnasconderebbe proprio il passo finale, che e' quello che dice com'e'\nandata.",
+        "operationId": "catena_api_audit__correlation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "correlation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Correlation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatenaEventi"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Catena",
+        "tags": [
+          "log"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "description": "Autentica l'operatore e apre la sessione.",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRichiesta"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatoreRisposta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "autenticazione"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "description": "Chiude la sessione.\n\nNon richiede l'autenticazione: chiudere una sessione gia' scaduta o\ninvalida deve riuscire comunque, altrimenti un cookie rotto resterebbe\nnel browser senza un modo di toglierlo.",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "autenticazione"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "description": "L'operatore della sessione corrente.",
+        "operationId": "me_api_auth_me_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatoreRisposta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Me",
+        "tags": [
+          "autenticazione"
+        ]
+      }
+    },
+    "/api/consents": {
+      "get": {
+        "description": "Elenco dei consensi, filtrabile per agente e per stato.\n\nIl filtro di stato si applica in SQL e non in Python: con molti consensi,\nfiltrare dopo aver letto tutto significherebbe leggere tutto.",
+        "operationId": "elenca_consensi_api_consents_get",
+        "parameters": [
+          {
+            "description": "Filtra per agente.",
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OwnerAgent"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtra per agente.",
+              "title": "Agent"
+            }
+          },
+          {
+            "description": "Filtra per stato calcolato.",
+            "in": "query",
+            "name": "stato",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "attivo",
+                    "scaduto",
+                    "revocato"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtra per stato calcolato.",
+              "title": "Stato"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConsensoRisposta"
+                  },
+                  "title": "Response Elenca Consensi Api Consents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Elenca Consensi",
+        "tags": [
+          "consensi"
+        ]
+      },
+      "post": {
+        "description": "Registra un consenso.",
+        "operationId": "concedi_consenso_api_consents_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsensoRichiesta"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsensoRisposta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Concedi Consenso",
+        "tags": [
+          "consensi"
+        ]
+      }
+    },
+    "/api/consents/{consenso_id}/revoke": {
+      "post": {
+        "description": "Revoca un consenso. La riga resta, con ``revoked_at`` impostato.",
+        "operationId": "revoca_consenso_api_consents__consenso_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "consenso_id",
+            "required": true,
+            "schema": {
+              "title": "Consenso Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsensoRisposta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoca Consenso",
+        "tags": [
+          "consensi"
+        ]
+      }
+    },
+    "/api/salute": {
+      "get": {
+        "description": "Sonda di vitalita'. Non dice niente sullo stato interno.\n\nNon e' autenticata, perche' serve a un healthcheck. Per la stessa\nragione non riporta la versione dello schema, il numero di tool o\naltri dettagli: una sonda deve dire se il processo risponde, non\ndescrivere il sistema a chi non e' entrato.",
+        "operationId": "salute_api_salute_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Salute Api Salute Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Salute",
+        "tags": [
+          "servizio"
+        ]
+      }
+    },
+    "/api/scope/aliases": {
+      "get": {
+        "operationId": "elenca_alias_api_scope_aliases_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AliasRisposta"
+                  },
+                  "title": "Response Elenca Alias Api Scope Aliases Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Elenca Alias",
+        "tags": [
+          "perimetro"
+        ]
+      },
+      "post": {
+        "description": "Dichiara un alias.\n\nIl contenimento nelle reti del perimetro lo verifica il trigger\n``scope_aliases_dentro_perimetro_trg``, che restituisce SQLSTATE\n``HM422`` con l'elenco delle reti dichiarate nel suggerimento. Qui non\nviene riverificato: sarebbe la stessa regola scritta due volte, e due\nscritture divergono.",
+        "operationId": "aggiungi_alias_api_scope_aliases_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AliasRichiesta"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasRisposta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "L'alias non cade in nessuna rete dichiarata."
+          }
+        },
+        "summary": "Aggiungi Alias",
+        "tags": [
+          "perimetro"
+        ]
+      }
+    },
+    "/api/scope/aliases/{alias_id}": {
+      "delete": {
+        "description": "Rimuove un alias.\n\nNon c'e' vincolo che lo impedisca: togliere un alias restringe il\nperimetro, e restringere e' sempre ammesso. E' l'asimmetria del dominio —\nla stessa per cui un tier puo' salire e non scendere.",
+        "operationId": "rimuovi_alias_api_scope_aliases__alias_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alias_id",
+            "required": true,
+            "schema": {
+              "title": "Alias Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rimuovi Alias",
+        "tags": [
+          "perimetro"
+        ]
+      }
+    },
+    "/api/scope/networks": {
+      "get": {
+        "operationId": "elenca_reti_api_scope_networks_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReteRisposta"
+                  },
+                  "title": "Response Elenca Reti Api Scope Networks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Elenca Reti",
+        "tags": [
+          "perimetro"
+        ]
+      },
+      "post": {
+        "description": "Dichiara una rete nel perimetro.\n\nLa forma canonica e' gia' stata verificata da Pydantic, che ha anche\nnormalizzato il valore. Il tipo `cidr` resta come vincolo di integrita'\nsotto: due livelli indipendenti, e quello che parla all'operatore e'\nquello che sa spiegare.",
+        "operationId": "aggiungi_rete_api_scope_networks_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReteRichiesta"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReteRisposta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "CIDR non in forma canonica."
+          }
+        },
+        "summary": "Aggiungi Rete",
+        "tags": [
+          "perimetro"
+        ]
+      }
+    },
+    "/api/scope/networks/{rete_id}": {
+      "delete": {
+        "description": "Rimuove una rete dal perimetro.\n\nRifiutata con 422 se qualche alias resterebbe fuori perimetro: lo\nverifica un trigger, non questo codice. Un perimetro che contenga un\nalias non contenuto da nessuna rete direbbe nello stesso momento che\nquell'indirizzo e' ammesso e che non lo e'.",
+        "operationId": "rimuovi_rete_api_scope_networks__rete_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rete_id",
+            "required": true,
+            "schema": {
+              "title": "Rete Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rimuovi Rete",
+        "tags": [
+          "perimetro"
+        ]
+      }
+    },
+    "/api/tools": {
+      "get": {
+        "description": "Il catalogo, con il tier effettivo preso dalla vista del database.\n\nIl tier effettivo non viene ricalcolato in Python: lo legge dalla vista,\nche e' dove la regola `max(dichiarato, override)` e' definita. Due\nimplementazioni della stessa regola sono due occasioni di scriverla\ndiversamente.",
+        "operationId": "elenca_tool_api_tools_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolRiepilogo"
+                  },
+                  "title": "Response Elenca Tool Api Tools Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Elenca Tool",
+        "tags": [
+          "tool"
+        ]
+      }
+    },
+    "/api/tools/{tool_id}": {
+      "get": {
+        "description": "Dettaglio: identita', i due assi, storico degli override.",
+        "operationId": "dettaglio_tool_api_tools__tool_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_id",
+            "required": true,
+            "schema": {
+              "title": "Tool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolDettaglio"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dettaglio Tool",
+        "tags": [
+          "tool"
+        ]
+      }
+    },
+    "/api/tools/{tool_id}/overrides": {
+      "post": {
+        "description": "Registra un innalzamento del tier.\n\n**Non c'e' un controllo di monotonia in questa funzione**, e l'assenza e'\ndeliberata. Il vincolo e' un trigger del database: l'inserimento viene\ntentato e, se il tier non innalza, il database lo rifiuta con SQLSTATE\n``HM409``, che qui diventa un 409.\n\nDue ragioni per farlo cosi' e non con un `if` prima dell'INSERT:\n\n1. **Non c'e' finestra.** Un controllo applicativo che precede la\n   scrittura lascia uno spazio fra la lettura del tier corrente e\n   l'inserimento: due richieste concorrenti possono leggere entrambe lo\n   stesso valore e passare entrambe. Il trigger prende un lock sulla riga\n   del tool, quindi la seconda richiesta attende e rilegge.\n2. **Non c'e' divergenza.** Con il controllo in due posti, uno dei due\n   prima o poi cambia senza l'altro. Qui esiste una sola formulazione\n   dell'invariante, e il criterio «rifiutato sia dall'API sia dal\n   database» e' vero per costruzione invece che per disciplina.",
+        "operationId": "innalza_tier_api_tools__tool_id__overrides_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_id",
+            "required": true,
+            "schema": {
+              "title": "Tool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRichiesta"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideRisposta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Il tier richiesto non innalza il tier effettivo corrente."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Innalza Tier",
+        "tags": [
+          "tool"
+        ]
+      }
+    }
+  }
+}
