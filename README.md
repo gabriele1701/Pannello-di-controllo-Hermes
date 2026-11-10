@@ -48,29 +48,35 @@ PostgreSQL stanno nei container.
 ```bash
 git clone https://github.com/gabriele1701/Pannello-di-controllo-Hermes
 cd Pannello-di-controllo-Hermes
-cp .env.example .env
+./scripts/prepara-env.sh
 ```
 
-Poi riempire i quattro valori obbligatori in `.env`:
+Lo script scrive `.env` con i quattro valori obbligatori già dentro: genera i
+tre segreti del sistema — la password del ruolo proprietario del database,
+quella del ruolo con cui gira l'applicazione, la chiave di firma del cookie —
+e stampa **le credenziali con cui entrare nel pannello**, che sono l'unica
+cosa da conservare. Il file nasce con permessi `600`.
 
-```bash
-# password del ruolo proprietario del database
-openssl rand -hex 32
-
-# password del ruolo con cui gira l'applicazione (sono due ruoli distinti,
-# vedi «Due ruoli di database» più sotto)
-openssl rand -hex 32
-
-# chiave di firma del cookie di sessione
-openssl rand -hex 32
+```
+      utente    operatore
+      password  f7abba3cc1b6b4e1b323ad49
 ```
 
-Esadecimale e non base64: queste password finiscono dentro un URL di
-connessione, e `openssl rand -base64` produce una `/` nel 40% dei casi — un
+Se `.env` esiste già, lo script non lo tocca e dice perché: quelle password
+sono scritte nel volume di PostgreSQL al primo avvio, e rigenerarle senza
+rimuovere il volume lascia l'applicazione incapace di connettersi al proprio
+database. `--forza` sovrascrive comunque, conservando il file precedente in
+`.env.precedente`.
+
+Per scegliere la password invece di riceverla generata:
+`./scripts/prepara-env.sh --password-operatore 'quella-che-voglio'`.
+
+I segreti sono esadecimali e non base64: due di loro finiscono dentro un URL
+di connessione, e `openssl rand -base64` produce una `/` nel 40% dei casi — un
 carattere che in un URL chiude la parte delle credenziali. L'esadecimale non
 ha caratteri speciali e, a parità di byte generati, ha la stessa entropia.
 
-e scegliere la password dell'operatore (`HERMES_ADMIN_PASSWORD`). Infine:
+Infine:
 
 ```bash
 docker compose up --build
@@ -89,11 +95,16 @@ password nota a chiunque abbia letto il repository.
 Per ripartire da zero:
 
 ```bash
-docker compose down -v && docker compose up --build
+docker compose down -v
+rm .env && ./scripts/prepara-env.sh
+docker compose up --build
 ```
 
 Il `-v` non è opzionale: il reset passa dalla rimozione del volume, perché le
-tabelle degli innalzamenti e del log non ammettono `DELETE` — vedi sotto.
+tabelle degli innalzamenti e del log non ammettono `DELETE` — vedi sotto. Il
+volume nuovo nasce con le password del `.env` nuovo, e per questo i due passi
+vanno insieme: rigenerare l'uno senza l'altro è il modo di ritrovarsi
+un'applicazione che non si connette.
 
 ---
 
@@ -578,18 +589,23 @@ per disaccordo.
 Serve un PostgreSQL 16 raggiungibile.
 
 ```bash
-# ruolo proprietario: migrazioni e seed
+# Entrambe le URL vanno impostate subito, anche se migrazioni e seed usano
+# solo quella del ruolo proprietario: la configurazione si valida tutta
+# insieme all'avvio di qualunque comando, quindi `python -m backend.seed`
+# fallisce se DATABASE_URL non c'è ancora.
 export MIGRATIONS_DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
+export DATABASE_URL="postgresql+psycopg://hermes_app:una-password-di-sviluppo@localhost:5432/hermes_panel"
 export HERMES_APP_DB_PASSWORD="una-password-di-sviluppo"
 export APP_SECRET_KEY="$(openssl rand -hex 32)"
 export HERMES_ADMIN_PASSWORD="una-password-di-sviluppo"
 
 pip install -e '.[dev]'
+
+# ruolo proprietario: schema e dati di esempio
 alembic upgrade head        # crea anche il ruolo hermes_app
 python -m backend.seed
 
 # ruolo applicativo: il server
-export DATABASE_URL="postgresql+psycopg://hermes_app:una-password-di-sviluppo@localhost:5432/hermes_panel"
 uvicorn backend.main:app --reload
 ```
 
