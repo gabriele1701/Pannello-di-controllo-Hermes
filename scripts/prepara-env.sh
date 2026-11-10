@@ -130,10 +130,16 @@ chmod 600 "$DESTINAZIONE"
 # Controprova. Se `.env.example` guadagnasse un quinto segnaposto senza che
 # questo script lo sappia, il file resterebbe incompleto e l'avvio
 # fallirebbe piu' tardi, con un errore che non nomina questo passaggio.
-if grep -q 'sostituiscimi' "$DESTINAZIONE"; then
+#
+# Il controllo guarda SOLO le righe di assegnazione: `.env.example` e' anche
+# documentazione, e un commento che nomini il segnaposto per spiegarlo non e'
+# un segnaposto da riempire. Senza l'ancoraggio, scrivere quella parola in un
+# commento fermava lo script.
+SEGNAPOSTO='^[A-Za-z_][A-Za-z0-9_]*=.*sostituiscimi'
+if grep -qE "$SEGNAPOSTO" "$DESTINAZIONE"; then
   echo >&2
   echo "Restano dei segnaposto non sostituiti in .env:" >&2
-  grep -n 'sostituiscimi' "$DESTINAZIONE" >&2
+  grep -nE "$SEGNAPOSTO" "$DESTINAZIONE" >&2
   echo >&2
   echo "Lo script non conosce queste variabili: vanno riempite a mano," >&2
   echo "e scripts/prepara-env.sh va aggiornato." >&2

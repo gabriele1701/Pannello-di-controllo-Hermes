@@ -13,7 +13,7 @@
 # commenti, che e' il posto giusto per starci.
 #
 # Avvio:
-#     cp .env.example .env     # poi riempire i quattro valori obbligatori
+#     ./scripts/prepara-env.sh   # scrive .env con i segreti generati
 #     docker compose up --build
 
 services:

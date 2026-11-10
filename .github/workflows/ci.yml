@@ -18,9 +18,10 @@
 #   2. suite     — i test su un PostgreSQL di servizio. Trova quasi tutto.
 #   3. immagine  — docker compose build. Trova cio' che si rompe solo dentro il
 #                  container: npm ci su musl, l'utente non root, le dipendenze.
-#   4. freddo    — l'avvio vero dello stack, da zero, con i dati di esempio.
-#                  E' l'unico che verifica l'entrypoint, l'healthcheck, l'ordine
-#                  fra migrazioni e seed, e la separazione dei ruoli in esercizio.
+#   4. freddo    — l'avvio vero dello stack, da zero, con i dati di esempio,
+#                  partendo dal comando che il README documenta. E' l'unico che
+#                  verifica scripts/prepara-env.sh, l'entrypoint, l'healthcheck,
+#                  l'ordine fra migrazioni e seed, e la separazione dei ruoli.
 
 name: CI
 
@@ -181,31 +182,60 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Scrivi .env come lo scriverebbe una persona
-        # Esattamente i passi del README: copiare .env.example e riempire i
-        # valori obbligatori. Se il README fosse incompleto o .env.example
-        # avesse piu' segnaposto di quelli documentati, questo passo fallisce.
+      - name: Prepara .env con il comando che il README documenta
+        # Il README documenta un comando solo, e questo passo esegue quel
+        # comando invece di imitarlo. E' il senso del lavoro `freddo`:
+        # verificare il percorso che una persona segue davvero, non uno
+        # equivalente scritto qui. Prima questo passo copiava `.env.example` e
+        # riempiva i valori con quattro `sed` -- un percorso che il README non
+        # descrive piu', quindi un passo che dichiarava di verificare i passi
+        # del README e verificava altro.
+        #
+        # Cosi' lo script e' coperto dalla CI: se si rompesse, o se
+        # `.env.example` guadagnasse un segnaposto che lo script non conosce,
+        # il fallimento arriva qui. Il controllo sui segnaposto
+        # `sostituiscimi` sta dentro lo script, che esce con stato 1 se ne
+        # restano: ripeterlo nel workflow vorrebbe dire tenerne due copie che
+        # prima o poi divergono.
+        #
+        # Lo script rifiuta di sovrascrivere un `.env` esistente. Qui non
+        # succede mai: il checkout e' pulito.
+        run: ./scripts/prepara-env.sh
+
+      - name: Le due password del database diventano il caso difficile
+        # Lo script genera esadecimale, che in un URL di connessione non ha
+        # caratteri speciali. E' la scelta giusta per chi usa il progetto, ma
+        # rende irraggiungibile il caso che conta: `/`, `+` e `=` dentro una
+        # password che finisce in un URL. Quindi le due password del database
+        # vengono riscritte qui, DOPO il percorso documentato, con quei
+        # caratteri dentro.
+        #
+        # Non e' pignoleria. Prima queste righe usavano `openssl rand
+        # -base64`, che produce una `/` nel 40% dei casi: il lavoro passava o
+        # falliva a sorteggio, e quando falliva diceva che il database non
+        # rispondeva -- indicando il componente sbagliato, mentre il difetto
+        # era un URL SQLAlchemy passato a libpq. Un caso al limite incontrato
+        # per sorteggio e' un caso al limite che non si sa di avere; fissarlo
+        # qui lo rende deterministico.
+        #
+        # Le altre due (APP_SECRET_KEY, HERMES_ADMIN_PASSWORD) restano quelle
+        # generate dallo script: non entrano in nessun URL.
         run: |
           set -eu
-          cp .env.example .env
-          # Le password del database con caratteri che in un URL hanno un
-          # significato: `/`, `+` e `=`. Non e' una password realistica, e'
-          # il caso difficile messo di proposito.
-          #
-          # Prima queste righe usavano `openssl rand -base64`, che produce
-          # una `/` nel 40% dei casi: il lavoro passava o falliva a seconda
-          # del sorteggio, e quando falliva diceva che il database non
-          # rispondeva. Un caso al limite preso a caso e' un caso al limite
-          # che non si sa di avere; fissarlo qui lo rende deterministico.
           sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=pa/ss+pro=prietario/$(openssl rand -hex 8)|" .env
           sed -i "s|^HERMES_APP_DB_PASSWORD=.*|HERMES_APP_DB_PASSWORD=pa/ss+app=licativo/$(openssl rand -hex 8)|" .env
-          sed -i "s|^APP_SECRET_KEY=.*|APP_SECRET_KEY=$(openssl rand -hex 32)|" .env
-          sed -i "s|^HERMES_ADMIN_PASSWORD=.*|HERMES_ADMIN_PASSWORD=$(openssl rand -hex 18)|" .env
-          if grep -q 'sostituiscimi' .env; then
-            echo ".env.example ha segnaposto che il README non dice di riempire:" >&2
-            grep -n 'sostituiscimi' .env >&2
-            exit 1
-          fi
+          # Controprova della sostituzione, non del suo esito: `sed` che non
+          # trova la riga non dice niente ed esce con stato 0. Se una di
+          # queste due variabili venisse rinominata, il caso difficile
+          # sparirebbe dalla CI in silenzio, lasciando un lavoro verde che non
+          # verifica piu' quello che dice di verificare.
+          for variabile in POSTGRES_PASSWORD HERMES_APP_DB_PASSWORD; do
+            if ! grep -q "^${variabile}=pa/ss" .env; then
+              echo "La sostituzione non ha trovato ${variabile} in .env." >&2
+              echo "Il caso delle password con caratteri speciali non e' piu' coperto." >&2
+              exit 1
+            fi
+          done
 
       - name: docker compose up
         run: docker compose up --build --detach
