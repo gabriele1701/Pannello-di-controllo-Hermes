@@ -110,6 +110,27 @@ else
   generata="no"
 fi
 
+# Il file nasce accanto alla destinazione e viene rinominato solo dopo i
+# controlli: `.env` o e' completo o non esiste.
+#
+# Prima la scrittura andava diretta su `.env`, e la guardia sui segnaposto
+# qui sotto usciva con stato 1 lasciando a terra un file incompleto. La
+# seconda esecuzione trovava quel file, rifiutava di toccarlo e indirizzava
+# verso `docker compose down -v && rm .env`, cioe' verso un problema diverso
+# da quello vero -- con il problema vero ormai scomparso dallo schermo.
+PARZIALE="$DESTINAZIONE.parziale"
+trap 'rm -f "$PARZIALE"' EXIT
+
+# Creato vuoto e GIA' a 600, prima che ci finisca dentro un segreto: la
+# redirezione sotto riusa questo file e ne conserva i permessi. Scrivere
+# prima e restringere dopo lascia una finestra, breve ma vera, in cui
+# quattro segreti sono leggibili da tutti gli utenti della macchina.
+rm -f "$PARZIALE"
+(
+  umask 077
+  : > "$PARZIALE"
+)
+
 # La sostituzione legge riga per riga invece di usare `sed`: una password
 # scelta da chi esegue lo script puo' contenere `&`, `/` o `\`, che in uno
 # script di sed hanno un significato. Qui il valore non viene mai
@@ -122,23 +143,34 @@ while IFS= read -r riga || [ -n "$riga" ]; do
     HERMES_ADMIN_PASSWORD=*) printf '%s\n' "HERMES_ADMIN_PASSWORD=$password_operatore" ;;
     *) printf '%s\n' "$riga" ;;
   esac
-done < "$MODELLO" > "$DESTINAZIONE"
-
-# Leggibile solo da chi lo possiede: contiene quattro segreti in chiaro.
-chmod 600 "$DESTINAZIONE"
+done < "$MODELLO" > "$PARZIALE"
 
 # Controprova. Se `.env.example` guadagnasse un quinto segnaposto senza che
 # questo script lo sappia, il file resterebbe incompleto e l'avvio
 # fallirebbe piu' tardi, con un errore che non nomina questo passaggio.
-if grep -q 'sostituiscimi' "$DESTINAZIONE"; then
+#
+# Il controllo guarda SOLO le righe di assegnazione: `.env.example` e' anche
+# documentazione, e un commento che nomini il segnaposto per spiegarlo non e'
+# un segnaposto da riempire. Senza l'ancoraggio, scrivere quella parola in un
+# commento fermava lo script.
+SEGNAPOSTO='^[A-Za-z_][A-Za-z0-9_]*=.*sostituiscimi'
+if grep -qE "$SEGNAPOSTO" "$PARZIALE"; then
   echo >&2
-  echo "Restano dei segnaposto non sostituiti in .env:" >&2
-  grep -n 'sostituiscimi' "$DESTINAZIONE" >&2
+  echo "Il modello ha dei segnaposto che questo script non sa riempire:" >&2
+  grep -nE "$SEGNAPOSTO" "$PARZIALE" >&2
   echo >&2
-  echo "Lo script non conosce queste variabili: vanno riempite a mano," >&2
-  echo "e scripts/prepara-env.sh va aggiornato." >&2
+  echo ".env NON e' stato scritto: non resta a terra un file incompleto che" >&2
+  echo "alla prossima esecuzione faccia sembrare il problema un altro." >&2
+  echo >&2
+  echo "Aggiungere queste variabili a scripts/prepara-env.sh." >&2
   exit 1
 fi
+
+# Rinomina nello stesso filesystem: da qui in avanti `.env` esiste ed e'
+# completo. I permessi arrivano dal file parziale; il chmod e' la garanzia
+# scritta, non un rimedio.
+mv "$PARZIALE" "$DESTINAZIONE"
+chmod 600 "$DESTINAZIONE"
 
 utente="$(grep -E '^HERMES_ADMIN_USERNAME=' "$DESTINAZIONE" | cut -d= -f2-)"
 
