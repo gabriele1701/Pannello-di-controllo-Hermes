@@ -396,3 +396,255 @@ code,
   font-size: 0.8125rem;
   line-height: 1.45;
 }
+
+/* --------------------------------------------------------------------- */
+/* Catalogo: la fascia di classificazione, i due assi, la tabella         */
+/* --------------------------------------------------------------------- */
+
+.riepilogo {
+  margin: 0 0 1rem;
+  color: var(--testo-tenue);
+  font-size: 0.875rem;
+}
+
+.riepilogo strong {
+  color: var(--testo);
+  font-weight: 600;
+}
+
+.filtri {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  background: var(--superficie);
+}
+
+.campo--inline {
+  gap: 0.25rem;
+}
+
+.campo--inline .campo__ingresso {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.875rem;
+  min-width: 11rem;
+}
+
+.interruttore {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-bottom: 0.35rem;
+  color: var(--testo-tenue);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.interruttore input {
+  accent-color: var(--accento);
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.filtri .bottone--tenue {
+  align-self: flex-end;
+  margin-bottom: 0.1rem;
+}
+
+/* Tabella --------------------------------------------------------------- */
+
+.tabella {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  background: var(--superficie);
+  font-size: 0.875rem;
+}
+
+.tabella thead th {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--bordo);
+  color: var(--testo-tenue);
+  font-weight: 500;
+  font-size: 0.8125rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tabella td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--bordo) 60%, transparent);
+  vertical-align: top;
+}
+
+.tabella tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tabella tbody tr:hover td {
+  background: var(--superficie-alta);
+}
+
+.tabella__tenue {
+  color: var(--testo-tenue);
+  white-space: nowrap;
+}
+
+.assente {
+  color: var(--testo-fioco);
+}
+
+/* La fascia di classificazione.
+   Due meta': sopra il tier dichiarato, sotto l'effettivo. Coincidendo si
+   legge come una barra sola; divergendo, il salto si vede da lontano, che
+   e' l'unico modo in cui un operatore nota un override senza cercarlo. */
+.tabella__fascia {
+  width: 4px;
+  padding: 0;
+  /* La fascia deve coprire l'altezza intera della riga, e in una tabella
+     `height: 100%` su un elemento interno non basta: si ancora alla cella. */
+  position: relative;
+}
+
+.fascia {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 4px;
+}
+
+.fascia__meta {
+  flex: 1;
+}
+
+.fascia__meta--verde {
+  background: var(--verde);
+}
+
+.fascia__meta--giallo {
+  background: var(--giallo);
+}
+
+.fascia__meta--rosso {
+  background: var(--rosso);
+}
+
+/* La riga con un override attivo e' leggermente piu' alta di tono: la
+   fascia dice *cosa* e' successo, questo dice *dove* guardare. */
+.riga--innalzata td {
+  background: color-mix(in srgb, var(--superficie-alta) 70%, transparent);
+}
+
+/* Colonna del tool ------------------------------------------------------ */
+
+.tool__intestazione {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tool__identificativo {
+  color: var(--testo);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.tool__identificativo:hover {
+  color: var(--accento);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tool__descrizione {
+  display: block;
+  margin-top: 0.15rem;
+  max-width: 44ch;
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.tool__ultimo {
+  color: var(--testo-fioco);
+}
+
+/* I due assi ------------------------------------------------------------ */
+
+.pastiglia {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid;
+  border-radius: var(--raggio);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.pastiglia--verde {
+  border-color: color-mix(in srgb, var(--verde) 55%, transparent);
+  background: var(--verde-debole);
+  color: #7fd4a1;
+}
+
+.pastiglia--giallo {
+  border-color: color-mix(in srgb, var(--giallo) 55%, transparent);
+  background: var(--giallo-debole);
+  color: #e8c472;
+}
+
+.pastiglia--rosso {
+  border-color: color-mix(in srgb, var(--rosso) 55%, transparent);
+  background: var(--rosso-debole);
+  color: #e58a7a;
+}
+
+/* Il tier dichiarato, quando c'e' un innalzamento: resta leggibile ma non
+   compete con quello effettivo, che e' il valore in vigore. */
+.pastiglia--tenue {
+  background: transparent;
+  border-color: var(--bordo-vivo);
+  color: var(--testo-tenue);
+}
+
+.divergenza {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.divergenza__segno {
+  color: var(--testo-fioco);
+}
+
+/* Il secondo asse. Viola, cioe' fuori dalla scala del tier: un booleano
+   colorato con i colori di una scala a tre si leggerebbe come un suo
+   quarto livello. */
+.badge-dati {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid #6d5a9c;
+  border-radius: var(--raggio);
+  background: #241d35;
+  color: #b9a5e0;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* Visibile ai lettori di schermo, non sullo schermo: l'intestazione della
+   colonna della fascia non ha un testo da mostrare, ma deve averne uno. */
+.solo-lettori {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
