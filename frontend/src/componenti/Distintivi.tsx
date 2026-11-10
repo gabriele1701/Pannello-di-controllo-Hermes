@@ -45,7 +45,7 @@ export function CellaTier({
     <span className="divergenza">
       <PastigliaTier tier={dichiarato} tenue />
       <span className="divergenza__segno" aria-label="innalzato a">
-        &rarr;
+        →
       </span>
       <PastigliaTier tier={effettivo} />
     </span>
