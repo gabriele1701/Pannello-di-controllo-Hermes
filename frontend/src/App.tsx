@@ -15,6 +15,7 @@ import { FornitoreSessione } from './auth/sessione'
 import { RichiedeSessione } from './auth/RichiedeSessione'
 import { Shell } from './componenti/Shell'
 import { Accesso } from './pagine/Accesso'
+import { Catalogo } from './pagine/Catalogo'
 import { InCostruzione } from './pagine/InCostruzione'
 import { NonTrovata } from './pagine/NonTrovata'
 import { ROTTE } from './percorsi'
@@ -28,15 +29,7 @@ export function App() {
 
           <Route element={<RichiedeSessione />}>
             <Route element={<Shell />}>
-              <Route
-                index
-                element={
-                  <InCostruzione
-                    titolo="Catalogo tool"
-                    descrizione="Tabella dei tool con tier dichiarato, tier effettivo e asse dei dati personali. Prossima consegna."
-                  />
-                }
-              />
+              <Route index element={<Catalogo />} />
               <Route
                 path="tool/:toolId"
                 element={
