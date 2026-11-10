@@ -16,6 +16,7 @@ import { RichiedeSessione } from './auth/RichiedeSessione'
 import { Shell } from './componenti/Shell'
 import { Accesso } from './pagine/Accesso'
 import { Catalogo } from './pagine/Catalogo'
+import { DettaglioTool } from './pagine/DettaglioTool'
 import { InCostruzione } from './pagine/InCostruzione'
 import { NonTrovata } from './pagine/NonTrovata'
 import { ROTTE } from './percorsi'
@@ -30,15 +31,7 @@ export function App() {
           <Route element={<RichiedeSessione />}>
             <Route element={<Shell />}>
               <Route index element={<Catalogo />} />
-              <Route
-                path="tool/:toolId"
-                element={
-                  <InCostruzione
-                    titolo="Dettaglio tool"
-                    descrizione="Identità dell’eseguibile, i due assi del rischio, storico degli innalzamenti e azione «Innalza tier»."
-                  />
-                }
-              />
+              <Route path="tool/:toolId" element={<DettaglioTool />} />
               <Route
                 path="perimetro"
                 element={

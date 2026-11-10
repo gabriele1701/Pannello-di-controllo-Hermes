@@ -282,7 +282,11 @@ code,
   color: var(--testo);
 }
 
+/* `display: block` e non il flex di `.stato`: questo riquadro contiene una
+   frase, e con la colonna flex ogni elemento inline dentro -- un <code>, un
+   link -- diventerebbe una riga a se', spezzando il testo in tronconi. */
 .stato--vuoto {
+  display: block;
   color: var(--testo-tenue);
   background: transparent;
   border-style: dashed;
@@ -647,4 +651,310 @@ code,
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------- */
+/* Dettaglio del tool                                                      */
+/* --------------------------------------------------------------------- */
+
+.indietro {
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: var(--testo-tenue);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.indietro::before {
+  content: '\2190';
+  margin-right: 0.4rem;
+}
+
+.indietro:hover {
+  color: var(--testo);
+}
+
+.dettaglio {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.dettaglio__testata {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dettaglio__titolo {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.dettaglio__descrizione {
+  margin: 0;
+  max-width: 68ch;
+}
+
+.dettaglio__agente {
+  margin: 0;
+  color: var(--testo-tenue);
+  font-size: 0.875rem;
+}
+
+/* I due assi, affiancati e di pari peso: nessuno dei due e' subordinato
+   all'altro, e la griglia lo dice prima del testo. */
+.assi {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.asse {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  /* La fascia di classificazione, qui sul riquadro invece che sulla riga. */
+  border-left: 3px solid var(--bordo-vivo);
+}
+
+.asse--verde {
+  border-left-color: var(--verde);
+}
+
+.asse--giallo {
+  border-left-color: var(--giallo);
+}
+
+.asse--rosso {
+  border-left-color: var(--rosso);
+}
+
+/* Il secondo asse non prende un colore della scala del tier: prende il
+   proprio. Vedi il commento in Distintivi.tsx. */
+.asse--dati {
+  border-left-color: #6d5a9c;
+}
+
+.asse__titolo {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.asse__sottotitolo {
+  margin: -0.45rem 0 0;
+  color: var(--testo-fioco);
+  font-size: 0.8125rem;
+}
+
+.asse__valore {
+  margin: 0.2rem 0;
+}
+
+.asse__spiegazione {
+  margin: 0;
+  font-size: 0.875rem;
+  max-width: 46ch;
+}
+
+.asse__nota {
+  margin: 0;
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  max-width: 46ch;
+}
+
+.asse__nota--chiusa {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--bordo);
+}
+
+.asse .bottone {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+}
+
+/* Il bottone di un'azione che non si annulla. Non rosso pieno: non e' un
+   allarme, e' un comando che va letto prima di premerlo. */
+.bottone--pericolo {
+  border-color: color-mix(in srgb, var(--rosso) 60%, var(--bordo-vivo));
+  background: var(--rosso-debole);
+  color: #e9a195;
+  font-weight: 550;
+}
+
+.bottone--pericolo:hover:not(:disabled) {
+  border-color: var(--rosso);
+  color: #f2b6ab;
+}
+
+/* Identita' e sezioni ---------------------------------------------------- */
+
+.sezione__titolo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.sezione__conteggio {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--bordo-vivo);
+  border-radius: var(--raggio);
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.sezione__nota {
+  margin: 0 0 0.9rem;
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+  max-width: 72ch;
+}
+
+.elenco-dati {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.4rem 1.25rem;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.elenco-dati dt {
+  color: var(--testo-tenue);
+}
+
+.elenco-dati dd {
+  margin: 0;
+  min-width: 0;
+}
+
+/* Lo SHA va a capo invece di sfondare la griglia: e' un valore che si
+   confronta carattere per carattere, quindi si mostra intero. */
+.elenco-dati__sha {
+  word-break: break-all;
+  color: var(--testo-tenue);
+}
+
+.override__motivo {
+  max-width: 52ch;
+  line-height: 1.45;
+}
+
+/* Dialogo ---------------------------------------------------------------- */
+
+.dialogo {
+  width: min(34rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 1px solid var(--bordo-vivo);
+  border-radius: var(--raggio);
+  background: var(--superficie);
+  color: var(--testo);
+}
+
+.dialogo::backdrop {
+  background: rgb(5 7 10 / 0.72);
+}
+
+.dialogo__corpo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.25rem;
+  /* La fascia, un'ultima volta: qui dice che si sta per cambiare la
+     classificazione di qualcosa. */
+  border-top: 2px solid var(--rosso);
+}
+
+.dialogo__titolo {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.dialogo__riepilogo {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.dialogo__nota {
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+}
+
+.scelta-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+}
+
+.scelta-tier legend {
+  padding: 0 0.35rem;
+}
+
+.scelta-tier__voce {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.scelta-tier__voce input {
+  accent-color: var(--accento);
+}
+
+.campo__obbligatorio {
+  margin-left: 0.4rem;
+  color: var(--rosso);
+  font-size: 0.75rem;
+}
+
+.campo__aiuto {
+  color: var(--testo-fioco);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+textarea.campo__ingresso {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+.avviso-irreversibile {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--rosso) 35%, var(--bordo));
+  border-left: 3px solid var(--rosso);
+  border-radius: var(--raggio);
+  background: var(--rosso-debole);
+  color: var(--testo);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.dialogo__azioni {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding-top: 0.2rem;
+}
+
+/* Sotto i 60rem i due assi si impilano invece di stringersi: due colonne
+   da 20rem non si leggono. Il desktop resta il bersaglio. */
+@media (max-width: 60rem) {
+  .assi {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

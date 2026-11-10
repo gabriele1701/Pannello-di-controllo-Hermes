@@ -65,7 +65,7 @@ export function Accesso() {
           Pannello di controllo
         </h1>
         <p className="accesso__nota">
-          Accesso riservato all&rsquo;operatore. Questa applicazione decide cosa gli
+          Accesso riservato all’operatore. Questa applicazione decide cosa gli
           agenti possono fare: non espone nessuna credenziale di servizio e
           nessuna rotta pensata per un client automatico.
         </p>

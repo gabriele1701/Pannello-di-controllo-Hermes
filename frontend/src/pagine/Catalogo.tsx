@@ -190,8 +190,7 @@ export function Catalogo() {
 
           {tool.length === 0 && (
             <Vuoto>
-              Nessun tool registrato. Il catalogo lo popola <code>hermes-core</code> all
-              &rsquo;avvio: questa applicazione lo mostra, non lo crea.
+              Nessun tool registrato. Il catalogo lo popola <code>hermes-core</code> all’avvio: questa applicazione lo mostra, non lo crea.
             </Vuoto>
           )}
 
