@@ -578,18 +578,23 @@ per disaccordo.
 Serve un PostgreSQL 16 raggiungibile.
 
 ```bash
-# ruolo proprietario: migrazioni e seed
+# Entrambe le URL vanno impostate subito, anche se migrazioni e seed usano
+# solo quella del ruolo proprietario: la configurazione si valida tutta
+# insieme all'avvio di qualunque comando, quindi `python -m backend.seed`
+# fallisce se DATABASE_URL non c'è ancora.
 export MIGRATIONS_DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
+export DATABASE_URL="postgresql+psycopg://hermes_app:una-password-di-sviluppo@localhost:5432/hermes_panel"
 export HERMES_APP_DB_PASSWORD="una-password-di-sviluppo"
 export APP_SECRET_KEY="$(openssl rand -hex 32)"
 export HERMES_ADMIN_PASSWORD="una-password-di-sviluppo"
 
 pip install -e '.[dev]'
+
+# ruolo proprietario: schema e dati di esempio
 alembic upgrade head        # crea anche il ruolo hermes_app
 python -m backend.seed
 
 # ruolo applicativo: il server
-export DATABASE_URL="postgresql+psycopg://hermes_app:una-password-di-sviluppo@localhost:5432/hermes_panel"
 uvicorn backend.main:app --reload
 ```
 
