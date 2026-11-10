@@ -85,12 +85,35 @@ function nomeCampo(loc: unknown): string {
   return typeof ultimo === 'string' ? ultimo : ''
 }
 
+/** Toglie il prefisso che Pydantic antepone ai messaggi dei validator.
+ *
+ * Un `ValueError` sollevato in un validator esce come «Value error, » seguito
+ * dal testo vero. Quel prefisso e' un dettaglio dell'implementazione del
+ * backend, non una parola scritta per chi legge: i messaggi del perimetro
+ * cominciano a spiegare dopo di lui.
+ *
+ * Toglierlo non e' riscrivere il messaggio — il testo resta quello del
+ * backend, intero. E' togliere l'involucro.
+ */
+function senzaPrefissoPydantic(messaggio: string): string {
+  const prefissi = ['Value error, ', 'Assertion failed, ']
+  for (const prefisso of prefissi) {
+    if (messaggio.startsWith(prefisso)) return messaggio.slice(prefisso.length)
+  }
+  return messaggio
+}
+
 function daPydantic(detail: unknown[]): ProblemaCampo[] {
   const campi: ProblemaCampo[] = []
   for (const voce of detail) {
     const o = oggetto(voce)
     const messaggio = testo(o?.['msg'])
-    if (messaggio) campi.push({ campo: nomeCampo(o?.['loc']), messaggio })
+    if (messaggio) {
+      campi.push({
+        campo: nomeCampo(o?.['loc']),
+        messaggio: senzaPrefissoPydantic(messaggio),
+      })
+    }
   }
   return campi
 }

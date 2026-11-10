@@ -251,13 +251,18 @@ code,
   background: var(--rosso-debole);
 }
 
+/* Una misura di riga leggibile anche quando il riquadro e' largo: i
+   messaggi del perimetro sono lunghi di proposito — spiegano — e su tre
+   righe da centoventi caratteri si smette di leggerli. */
 .stato__titolo {
   margin: 0;
+  max-width: 82ch;
   font-weight: 550;
 }
 
 .stato__suggerimento {
   margin: 0;
+  max-width: 82ch;
   color: var(--testo-tenue);
 }
 
@@ -957,4 +962,69 @@ textarea.campo__ingresso {
   .assi {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* --------------------------------------------------------------------- */
+/* Perimetro                                                               */
+/* --------------------------------------------------------------------- */
+
+.perimetro {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.perimetro .riepilogo {
+  margin-bottom: 0;
+  max-width: 82ch;
+}
+
+/* Il modulo di aggiunta sta sotto la tabella e non sopra: la tabella e' cio'
+   che si consulta, il modulo cio' che si usa ogni tanto. */
+.modulo-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--bordo);
+}
+
+.modulo-inline .bottone {
+  /* Allineato alla base dei campi, che hanno etichetta sopra e aiuto sotto. */
+  margin-top: 1.3rem;
+}
+
+.modulo-inline .campo__aiuto {
+  max-width: 16rem;
+}
+
+.tabella__azioni {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.conferma {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+/* Il rifiuto compare sotto la riga che lo ha provocato: quando il database
+   dice che rimuovere questa rete lascerebbe degli alias fuori perimetro, il
+   messaggio deve stare accanto a quella rete, non in cima alla pagina. */
+.riga-errore td {
+  padding: 0 0.75rem 0.75rem;
+  border-bottom: none;
+}
+
+.riga-errore .stato--errore {
+  margin: 0;
+}
+
+/* Un campo che il backend ha rifiutato si segnala da solo. */
+.campo__ingresso[aria-invalid='true'] {
+  border-color: var(--rosso);
 }

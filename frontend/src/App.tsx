@@ -19,6 +19,7 @@ import { Catalogo } from './pagine/Catalogo'
 import { DettaglioTool } from './pagine/DettaglioTool'
 import { InCostruzione } from './pagine/InCostruzione'
 import { NonTrovata } from './pagine/NonTrovata'
+import { Perimetro } from './pagine/Perimetro'
 import { ROTTE } from './percorsi'
 
 export function App() {
@@ -32,15 +33,7 @@ export function App() {
             <Route element={<Shell />}>
               <Route index element={<Catalogo />} />
               <Route path="tool/:toolId" element={<DettaglioTool />} />
-              <Route
-                path="perimetro"
-                element={
-                  <InCostruzione
-                    titolo="Perimetro"
-                    descrizione="Reti autorizzate e alias dichiarati, con i messaggi di rifiuto del backend."
-                  />
-                }
-              />
+              <Route path="perimetro" element={<Perimetro />} />
               <Route
                 path="consensi"
                 element={
