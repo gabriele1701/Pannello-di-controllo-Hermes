@@ -200,7 +200,20 @@ jobs:
         #
         # Lo script rifiuta di sovrascrivere un `.env` esistente. Qui non
         # succede mai: il checkout e' pulito.
-        run: ./scripts/prepara-env.sh
+        #
+        # `> /dev/null` non e' per togliere rumore: lo script stampa alla fine
+        # la password dell'operatore, e un log di GitHub Actions su un
+        # repository pubblico lo legge chiunque. GitHub non puo' mascherarla
+        # perche' non e' un segreto del repository: e' generata qui. Il rischio
+        # e' nullo -- vale per un container distrutto dal passo `Spegni`, e il
+        # volume viene rimosso con `down -v` -- ma una credenziale in chiaro in
+        # un log pubblico resta una credenziale in chiaro in un log pubblico.
+        #
+        # Si butta solo stdout. Lo script manda su stderr TUTTI i messaggi di
+        # errore -- il rifiuto di sovrascrivere un `.env` esistente e l'elenco
+        # dei segnaposto che non sa riempire -- quindi un fallimento resta
+        # leggibile per intero. Non aggiungere `2>&1`.
+        run: ./scripts/prepara-env.sh > /dev/null
 
       - name: Le due password del database diventano il caso difficile
         # Lo script genera esadecimale, che in un URL di connessione non ha
