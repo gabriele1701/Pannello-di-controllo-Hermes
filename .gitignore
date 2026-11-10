@@ -1,6 +1,11 @@
-# Segreti: solo .env.example va versionato
+# Segreti: solo .env.example va versionato.
+# `.env.*` copre anche i file che nascono accanto al .env — il backup che
+# `scripts/prepara-env.sh --forza` lascia in `.env.precedente`, e le copie
+# che si fanno a mano. Senza, quel backup sarebbe tracciabile: quattro
+# segreti in chiaro a un `git add -A` di distanza dal repository.
 .env
 *.env
+.env.*
 !.env.example
 
 # Python
