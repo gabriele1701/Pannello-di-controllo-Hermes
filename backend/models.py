@@ -125,10 +125,55 @@ _ETICHETTE_AGENTE: dict[OwnerAgent, str] = {
 
 
 class TargetKind(StrEnum):
-    """Che bersaglio accetta un tool, e quindi se il perimetro gli si applica."""
+    """Che bersaglio accetta un tool, e quindi QUALE perimetro gli si applica.
+
+    Non e' una descrizione: decide quale controllo viene applicato
+    all'argomento prima dell'esecuzione, e in `hermes-core` c'e' un
+    validatore per valore con un `match` esaustivo -- un valore senza il suo
+    ramo fa fallire visibilmente, invece di scivolare in un ramo permissivo.
+    La regola la', che vale anche qui: **nessun kind senza validatore**.
+
+    `NONE` e' il default, e il default sta sul lato restrittivo: un tool che
+    non dichiara un bersaglio non ne accetta uno.
+
+    =========  ==========================  ==================================
+    Valore     Bersaglio                   Perimetro
+    =========  ==========================  ==================================
+    `none`     nessuno                     nessuno
+    `host`     indirizzo o rete            `scope_networks` / `scope_aliases`
+    `path`     file o directory            `scope_paths`
+    `process`  processo in esecuzione      **il container stesso**
+    =========  ==========================  ==================================
+
+    Per `process` non esiste una tabella di scope, e non e' una lacuna: un
+    PID e' effimero e viene riciclato, quindi «il PID 4312 e' autorizzato»
+    sarebbe falso qualche secondo dopo essere stato scritto. Il confine di
+    isolamento *e'* il perimetro, e il vincolo `tools_bersaglio_isolato`
+    impedisce di registrare un tool di questo tipo senza container.
+    """
 
     NONE = "none"
     HOST = "host"
+    PATH = "path"
+    PROCESS = "process"
+
+    @property
+    def etichetta(self) -> str:
+        """Nome leggibile, per l'interfaccia in italiano.
+
+        Calcolata dal server come `OwnerAgent.etichetta`, e per la stessa
+        ragione: e' un vocabolario del dominio, e tenerlo in un posto solo
+        evita che due client traducano `process` in due modi diversi.
+        """
+        return _ETICHETTE_BERSAGLIO[self]
+
+
+_ETICHETTE_BERSAGLIO: dict[TargetKind, str] = {
+    TargetKind.NONE: "Nessun bersaglio",
+    TargetKind.HOST: "Indirizzo o rete",
+    TargetKind.PATH: "File o directory",
+    TargetKind.PROCESS: "Processo in esecuzione",
+}
 
 
 class CallOutcome(StrEnum):
@@ -321,6 +366,41 @@ class ScopeAlias(Base):
     address: Mapped[str] = mapped_column(InetTesto, nullable=False)
 
 
+#: Lunghezza massima di un prefisso di percorso.
+#:
+#: Il numero viene da `hermes-core`, non da qui: il campo `target` di
+#: un'invocazione e della riga di audit e' dichiarato `max_length=256`, e il
+#: gate rifiuta qualunque bersaglio piu' lungo perche' «un bersaglio che non
+#: entra nella riga di audit non e' registrabile, e un'esecuzione non
+#: registrabile non si fa».
+#:
+#: Un prefisso piu' lungo di 256 potrebbe contenere solo bersagli che il gate
+#: rifiuta sempre: sarebbe un perimetro sotto il quale niente e' invocabile.
+MAX_PREFISSO = 256
+
+
+class ScopePath(Base):
+    """Prefisso di percorso autorizzato del perimetro.
+
+    La forma canonica -- assoluto, senza `..`, senza doppie barre, senza
+    barra finale -- la impongono i `CHECK` della migrazione 0004, una regola
+    per vincolo. Qui non c'e' nessuna validazione che li duplichi: due
+    formulazioni della stessa regola divergono, e quella che conta e' quella
+    che vale anche per un `INSERT` fatto a mano.
+
+    Che un bersaglio *cada dentro* uno di questi prefissi non lo verifica
+    questa applicazione: richiede di risolvere i collegamenti simbolici nel
+    filesystem su cui il tool girera', che non e' questo. Lo fa il gate di
+    `hermes-core` al momento dell'esecuzione.
+    """
+
+    __tablename__ = "scope_paths"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    prefix: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class ScopeConsent(Base):
     """Consenso dell'operatore per un agente su uno scope."""
 
@@ -435,6 +515,8 @@ __all__ = [
     "ScopeAlias",
     "ScopeConsent",
     "ScopeNetwork",
+    "MAX_PREFISSO",
+    "ScopePath",
     "TargetKind",
     "TierOverride",
     "Tool",

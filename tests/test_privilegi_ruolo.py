@@ -51,7 +51,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from tests.helpers import sqlstate
+from tests.helpers import nome_vincolo, sqlstate
 
 #: Tabelle che reggono gli invarianti append-only.
 TABELLE_APPEND_ONLY = ("tier_overrides", "audit_events")
@@ -534,6 +534,27 @@ def test_il_ruolo_applicativo_puo_fare_il_proprio_lavoro(
         )
         conn.execute(text("DELETE FROM scope_networks WHERE cidr = '10.9.0.0/24'"))
 
+    # Perimetro dei percorsi: SELECT, INSERT, DELETE.
+    #
+    # La tabella e' nata con la 0004, e la 0002 non ha
+    # `ALTER DEFAULT PRIVILEGES`: senza le due righe di GRANT in quella
+    # migrazione, qui arriverebbe «permission denied for table scope_paths».
+    # E' il punto in cui una concessione dimenticata diventa un test rosso
+    # invece di un 500 in esercizio.
+    with engine_app.begin() as conn:
+        percorso = conn.execute(
+            text(
+                "INSERT INTO scope_paths (prefix, label) "
+                "VALUES ('/srv/prova-concessioni', 'prova') RETURNING id"
+            )
+        ).scalar_one()
+        assert (
+            conn.execute(text("SELECT count(*) FROM scope_paths")).scalar_one() > 0
+        )
+        conn.execute(
+            text("DELETE FROM scope_paths WHERE id = :i"), {"i": percorso}
+        )
+
     # Consenso: INSERT, e UPDATE della sola colonna revoked_at.
     with engine_app.begin() as conn:
         consenso = conn.execute(
@@ -579,3 +600,100 @@ def test_il_trigger_di_monotonia_scatta_anche_per_il_ruolo_applicativo(
         )
     assert sqlstate(info.value) == "HM409"
     assert "solo salire" in _messaggio(info.value)
+
+
+# --------------------------------------------------------------------------- #
+# Il perimetro dei percorsi
+#
+# Tabella nuova, concessioni scritte a mano nella migrazione che l'ha creata.
+# I divieti qui sotto sono gli stessi delle altre tabelle, e vanno verificati
+# su questa perche' «vale per tutte» e' esattamente il genere di affermazione
+# che smette di essere vera quando qualcuno aggiunge una tabella.
+# --------------------------------------------------------------------------- #
+
+
+def test_non_puo_modificare_un_prefisso_sul_posto(engine_app: Engine) -> None:
+    """Nessun UPDATE su `scope_paths`, e l'assenza e' una scelta.
+
+    Cambiare un prefisso sul posto renderebbe ambiguo cosa era autorizzato
+    prima della modifica. Si rimuove e si dichiara: due righe nel log invece
+    di una riga mutata.
+    """
+    exc = _errore(engine_app, "UPDATE scope_paths SET label = 'altra'")
+    assert "permission denied" in _messaggio(exc)
+
+
+def test_non_puo_rimuovere_un_vincolo_dei_percorsi(engine_app: Engine) -> None:
+    """Il vincolo che vale piu' degli altri: senza, il resto e' decorativo."""
+    exc = _errore(
+        engine_app,
+        "ALTER TABLE scope_paths DROP CONSTRAINT scope_paths_prefix_senza_risalita",
+    )
+    assert "must be owner" in _messaggio(exc)
+
+
+def test_non_puo_rimuovere_la_tabella_dei_percorsi(engine_app: Engine) -> None:
+    exc = _errore(engine_app, "DROP TABLE scope_paths")
+    assert "must be owner" in _messaggio(exc)
+
+
+def test_non_puo_allargare_il_limite_di_lunghezza(engine_app: Engine) -> None:
+    """Un ALTER che sostituisse il vincolo sarebbe un modo di aggirarlo."""
+    exc = _errore(
+        engine_app,
+        "ALTER TABLE scope_paths ADD CONSTRAINT scope_paths_prefix_lunghezza2 "
+        "CHECK (length(prefix) BETWEEN 1 AND 100000)",
+    )
+    assert "must be owner" in _messaggio(exc)
+
+
+def test_non_puo_togliere_al_vincolo_dell_isolamento(engine_app: Engine) -> None:
+    """`tools_bersaglio_isolato` e' la regola «per i processi il perimetro e'
+    il container». Il ruolo che gira in esercizio non la puo' spegnere.
+    """
+    exc = _errore(
+        engine_app, "ALTER TABLE tools DROP CONSTRAINT tools_bersaglio_isolato"
+    )
+    assert "must be owner" in _messaggio(exc)
+
+
+def test_i_vincoli_dei_percorsi_valgono_per_il_ruolo_applicativo(
+    engine_app: Engine,
+) -> None:
+    """Il ruolo puo' inserire, e cio' che inserisce passa dai `CHECK`.
+
+    La chiusura del cerchio, come per la monotonia del tier: non puo'
+    rimuovere i vincoli (test sopra), e quando scrive i vincoli lo rifiutano.
+    """
+    with pytest.raises(Exception) as info:
+        _esegui_come_app(
+            engine_app,
+            "INSERT INTO scope_paths (prefix, label) "
+            "VALUES ('/srv/analisi/../etc', 'risalita')",
+        )
+    assert nome_vincolo(info.value) == "scope_paths_prefix_senza_risalita"
+
+
+def test_il_ruolo_applicativo_non_puo_registrare_un_tool_non_isolato(
+    engine_app: Engine,
+) -> None:
+    """Doppio sbarramento, e la ragione per cui ce ne sono due.
+
+    `tools` e' in sola lettura per questo ruolo, quindi il rifiuto arriva dai
+    privilegi e non dal `CHECK`. Il `CHECK` serve contro l'altro percorso --
+    chi registra i tool con il ruolo proprietario -- e `test_db_constraints`
+    verifica quello. Nessuno dei due da solo copre entrambi.
+    """
+    exc = _errore(
+        engine_app,
+        """
+        INSERT INTO tools (tool_id, agent, declared_tier, personal_data,
+                           requires_container, target_kind, exec_path,
+                           exec_sha256, exec_args, description)
+        VALUES ('prova.non-isolato', 'vuln_assessment', 'rosso', false, false,
+                'process', 'agents/prova/x.py',
+                '34b7aa6afc7f96e5c88ecfd8f4305a0739743bc5a1f7aa27ee2b63546518d3a8',
+                '{}', 'x')
+        """,
+    )
+    assert "permission denied" in _messaggio(exc)

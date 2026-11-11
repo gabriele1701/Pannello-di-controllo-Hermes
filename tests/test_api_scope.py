@@ -208,3 +208,194 @@ def test_rimozione_alias_poi_rete_accettata(autenticato) -> None:
 def test_rimozione_di_cio_che_non_esiste_404(autenticato) -> None:
     assert autenticato.delete("/api/scope/networks/999999").status_code == 404
     assert autenticato.delete("/api/scope/aliases/999999").status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Perimetro dei percorsi
+#
+# Le tre rotte sono speculari a quelle delle reti, ma la verifica di un
+# prefisso non e' speculare a quella di una CIDR: il database ha sette
+# vincoli con un nome parlante, e la rotta traduce il nome in una
+# spiegazione. Questi test guardano la traduzione, cioe' cio' che
+# l'operatore legge.
+# --------------------------------------------------------------------------- #
+
+
+def test_prefisso_canonico_accettato(autenticato) -> None:
+    risposta = autenticato.post(
+        "/api/scope/paths",
+        json={"prefix": "/srv/hermes/campioni", "label": "Campioni da analizzare"},
+    )
+    assert risposta.status_code == 201, risposta.text
+    corpo = risposta.json()
+    assert corpo["prefix"] == "/srv/hermes/campioni"
+    assert corpo["id"] > 0
+
+
+def test_elenco_ordinato_per_prefisso(autenticato) -> None:
+    for prefisso in ("/srv/c", "/srv/a", "/srv/b"):
+        assert (
+            autenticato.post(
+                "/api/scope/paths", json={"prefix": prefisso, "label": "x"}
+            ).status_code
+            == 201
+        )
+    elenco = autenticato.get("/api/scope/paths")
+    assert elenco.status_code == 200
+    assert [v["prefix"] for v in elenco.json()] == ["/srv/a", "/srv/b", "/srv/c"]
+
+
+@pytest.mark.parametrize(
+    ("prefisso", "attesi"),
+    [
+        pytest.param("srv/analisi", ("assoluto", "barra iniziale"), id="relativo"),
+        pytest.param("/", ("non e' un perimetro", "rinunciare"), id="radice"),
+        pytest.param(
+            "/srv/analisi/../etc", ("'..'", "antenato"), id="risalita"
+        ),
+        pytest.param("/srv//analisi", ("'//'", "due volte"), id="doppia-barra"),
+        pytest.param(
+            "/srv/analisi/", ("terminare con '/'", "due righe"), id="barra-finale"
+        ),
+        pytest.param("/srv/ana\\lisi", ("backslash", "separatore"), id="backslash"),
+        pytest.param(
+            "/srv/analisi ",
+            ("spazio", "non viene rimosso"),
+            id="spazio-finale",
+        ),
+        pytest.param(
+            "/" + "a" * 299, ("256", "riga di audit"), id="troppo-lungo"
+        ),
+    ],
+)
+def test_prefisso_non_canonico_rifiutato_con_spiegazione(
+    autenticato, prefisso: str, attesi: tuple[str, ...]
+) -> None:
+    """Il criterio §6 dice «rifiutato con una spiegazione».
+
+    Non basta il 422: un «valore non valido» lascia chi lo legge a riscrivere
+    lo stesso errore in un'altra forma. Ogni caso qui verifica che il
+    messaggio dica **che cosa** non va, e il suggerimento **cosa fare
+    invece**.
+    """
+    risposta = autenticato.post(
+        "/api/scope/paths", json={"prefix": prefisso, "label": "Prova"}
+    )
+    assert risposta.status_code == 422, risposta.text
+    dettaglio = risposta.json()["detail"]
+    assert "messaggio" in dettaglio
+    assert "suggerimento" in dettaglio, "la spiegazione non dice cosa fare"
+    testo = _messaggio(risposta)
+    for atteso in attesi:
+        assert atteso.lower() in testo, f"manca {atteso!r} in: {testo}"
+
+
+def test_prefisso_duplicato_rifiutato_con_409(autenticato) -> None:
+    """Un duplicato non e' un problema di forma: e' un conflitto di stato."""
+    primo = {"prefix": "/srv/unico", "label": "Primo"}
+    assert autenticato.post("/api/scope/paths", json=primo).status_code == 201
+    risposta = autenticato.post(
+        "/api/scope/paths", json={"prefix": "/srv/unico", "label": "Secondo"}
+    )
+    assert risposta.status_code == 409
+    assert "/srv/unico" in _messaggio(risposta)
+
+
+def test_prefisso_vuoto_rifiutato_da_pydantic(autenticato) -> None:
+    """Il 422 ha due forme, e questa e' quella di Pydantic.
+
+    Una stringa vuota non arriva al database: la intercetta `min_length`. Il
+    corpo e' quindi la lista per campo, non l'oggetto con `messaggio`, ed e'
+    il motivo per cui il contratto dichiara il 422 di questa rotta come
+    `anyOf` fra le due forme.
+    """
+    risposta = autenticato.post(
+        "/api/scope/paths", json={"prefix": "", "label": "Prova"}
+    )
+    assert risposta.status_code == 422
+    assert isinstance(risposta.json()["detail"], list)
+
+
+def test_rimozione_di_un_prefisso(autenticato) -> None:
+    creato = autenticato.post(
+        "/api/scope/paths", json={"prefix": "/srv/da-togliere", "label": "Prova"}
+    )
+    assert creato.status_code == 201
+    identificativo = creato.json()["id"]
+
+    assert autenticato.delete(f"/api/scope/paths/{identificativo}").status_code == 204
+    assert autenticato.get("/api/scope/paths").json() == []
+
+    # La seconda rimozione non trova niente, e lo dice.
+    seconda = autenticato.delete(f"/api/scope/paths/{identificativo}")
+    assert seconda.status_code == 404
+    assert str(identificativo) in _messaggio(seconda)
+
+
+def test_rimuovere_un_prefisso_non_tocca_gli_altri(autenticato) -> None:
+    """Togliere un prefisso restringe il perimetro e non lascia niente fuori.
+
+    Al contrario della rimozione di una rete, che un trigger rifiuta se
+    qualche alias resterebbe orfano. Per i percorsi non esistono alias, e
+    questo test fissa l'asimmetria invece di lasciarla implicita.
+    """
+    identificativi = []
+    for prefisso in ("/srv/resta", "/srv/va-via"):
+        risposta = autenticato.post(
+            "/api/scope/paths", json={"prefix": prefisso, "label": "x"}
+        )
+        assert risposta.status_code == 201
+        identificativi.append(risposta.json()["id"])
+
+    assert autenticato.delete(f"/api/scope/paths/{identificativi[1]}").status_code == 204
+    assert [v["prefix"] for v in autenticato.get("/api/scope/paths").json()] == [
+        "/srv/resta"
+    ]
+
+
+def test_i_percorsi_richiedono_una_sessione(client) -> None:
+    """Il perimetro non si legge ne' si modifica senza autenticazione."""
+    assert client.get("/api/scope/paths").status_code == 401
+    assert (
+        client.post("/api/scope/paths", json={"prefix": "/srv/x", "label": "y"}).status_code
+        == 401
+    )
+    assert client.delete("/api/scope/paths/1").status_code == 401
+
+
+def test_il_prefisso_non_viene_normalizzato(autenticato) -> None:
+    """Uno spazio finale viene RIFIUTATO, non rimosso.
+
+    Test con un nome proprio perche' e' una scelta che si puo' disfare per
+    distrazione: basta rimettere `str_strip_whitespace=True` sul modello
+    d'ingresso e il campo torna a essere ripulito, l'API risponde 201, e
+    autorizza un percorso diverso da quello digitato. E' successo, e questo
+    test e' cio' che se n'e' accorto.
+
+    Per il kernel `/srv/analisi ` e `/srv/analisi` sono due directory
+    distinte, e quale delle due fosse intesa non lo sa l'applicazione. La
+    regola e' la stessa che `hermes-core` applica al bersaglio di
+    un'invocazione: normalizzare significa autorizzare qualcosa di diverso da
+    cio' che e' stato chiesto.
+    """
+    risposta = autenticato.post(
+        "/api/scope/paths", json={"prefix": "/srv/analisi ", "label": "Con spazio"}
+    )
+    assert risposta.status_code == 422, (
+        f"lo spazio finale e' stato accettato: la risposta e' {risposta.text}"
+    )
+    assert autenticato.get("/api/scope/paths").json() == []
+
+
+def test_l_etichetta_invece_viene_ripulita(autenticato) -> None:
+    """L'altra meta' della scelta sopra.
+
+    L'etichetta e' testo per chi legge, non un percorso: uno spazio in piu'
+    non cambia a cosa si riferisce, e ripulirlo non autorizza niente di
+    diverso.
+    """
+    risposta = autenticato.post(
+        "/api/scope/paths", json={"prefix": "/srv/x", "label": "  Con spazi  "}
+    )
+    assert risposta.status_code == 201, risposta.text
+    assert risposta.json()["label"] == "Con spazi"

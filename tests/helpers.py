@@ -29,6 +29,20 @@ PASSWORD_PROVA = "password-di-prova-dei-test"
 PASSWORD_RUOLO_APP_DEFAULT = "ruolo-app-di-prova"
 
 
+def nome_vincolo(exc: BaseException) -> str | None:
+    """Nome del vincolo violato, dalla diagnostica di PostgreSQL.
+
+    Come `sqlstate`, si legge dal campo diagnostico e non dal testo del
+    messaggio. Serve a verificare **quale** vincolo ha rifiutato una riga, non
+    solo che qualcosa l'abbia rifiutata: con sette regole di forma sullo
+    stesso campo, «e' stata rifiutata» non dice se e' stata rifiutata per la
+    ragione giusta.
+    """
+    orig = getattr(exc, "orig", None)
+    diag = getattr(orig, "diag", None)
+    return getattr(diag, "constraint_name", None)
+
+
 def sqlstate(exc: BaseException) -> str | None:
     """Codice SQLSTATE di un'eccezione SQLAlchemy.
 
