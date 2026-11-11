@@ -13,7 +13,7 @@
  * quarto livello della scala.
  */
 
-import type { StatoConsenso, Tier } from '../api/tipi'
+import type { Esito, StatoConsenso, Tier } from '../api/tipi'
 
 /** Pastiglia con il nome del tier. */
 export function PastigliaTier({ tier, tenue = false }: { tier: Tier; tenue?: boolean }) {
@@ -88,4 +88,15 @@ export function BadgeDatiPersonali() {
  */
 export function BadgeStato({ stato }: { stato: StatoConsenso }) {
   return <span className={`badge-stato badge-stato--${stato}`}>{stato}</span>
+}
+
+/** Esito di un evento del log.
+ *
+ * Sfondo pieno e non bordo, al contrario delle pastiglie del tier: sono due
+ * vocabolari diversi e devono sembrarlo. `ok` e `denied` usano il verde e il
+ * rosso perche' su un esito significano quello che sembrano, ma la forma
+ * tiene separate le due letture.
+ */
+export function BadgeEsito({ esito }: { esito: Esito }) {
+  return <span className={`badge-esito badge-esito--${esito}`}>{esito}</span>
 }

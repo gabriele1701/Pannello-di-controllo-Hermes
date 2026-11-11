@@ -16,9 +16,10 @@ import { RichiedeSessione } from './auth/RichiedeSessione'
 import { Shell } from './componenti/Shell'
 import { Accesso } from './pagine/Accesso'
 import { Catalogo } from './pagine/Catalogo'
+import { CatenaLog } from './pagine/CatenaLog'
 import { Consensi } from './pagine/Consensi'
 import { DettaglioTool } from './pagine/DettaglioTool'
-import { InCostruzione } from './pagine/InCostruzione'
+import { Log } from './pagine/Log'
 import { NonTrovata } from './pagine/NonTrovata'
 import { Perimetro } from './pagine/Perimetro'
 import { ROTTE } from './percorsi'
@@ -36,15 +37,8 @@ export function App() {
               <Route path="tool/:toolId" element={<DettaglioTool />} />
               <Route path="perimetro" element={<Perimetro />} />
               <Route path="consensi" element={<Consensi />} />
-              <Route
-                path="log"
-                element={
-                  <InCostruzione
-                    titolo="Log d’audit"
-                    descrizione="Vista filtrabile del log, e la catena completa di un correlation_id."
-                  />
-                }
-              />
+              <Route path="log" element={<Log />} />
+              <Route path="log/:correlationId" element={<CatenaLog />} />
               <Route path="*" element={<NonTrovata />} />
             </Route>
           </Route>
