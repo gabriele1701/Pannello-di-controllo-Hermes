@@ -28,6 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
+from backend.errors import risposte
 from backend.models import AuditEvent, CallOutcome, LogAction, OwnerAgent
 from backend.schemas import CatenaEventi, Limite, PaginaEventi, Scarto
 from backend.security import Operatore
@@ -35,7 +36,11 @@ from backend.security import Operatore
 router = APIRouter(prefix="/audit", tags=["log"])
 
 
-@router.get("", response_model=PaginaEventi)
+@router.get(
+    "",
+    response_model=PaginaEventi,
+    responses=risposte({422: "Intervallo vuoto, o parametri di pagina fuori scala."}),
+)
 def elenca_eventi(
     operatore: Operatore,
     correlation_id: Annotated[uuid.UUID | None, Query()] = None,
@@ -109,7 +114,11 @@ def elenca_eventi(
     }
 
 
-@router.get("/{correlation_id}", response_model=CatenaEventi)
+@router.get(
+    "/{correlation_id}",
+    response_model=CatenaEventi,
+    responses=risposte({404: "Nessun evento con quel correlation_id."}),
+)
 def catena(
     correlation_id: uuid.UUID,
     operatore: Operatore,

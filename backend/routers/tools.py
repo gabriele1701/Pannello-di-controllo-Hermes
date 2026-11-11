@@ -26,7 +26,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
-from backend.errors import traduci_errore_db
+from backend.errors import risposte, traduci_errore_db
 from backend.models import RiskTier, TierOverride, Tool, tool_effective_tier
 from backend.schemas import (
     OverrideRichiesta,
@@ -122,7 +122,11 @@ def _cerca_tool(db: Session, tool_id: str) -> tuple[Tool, object]:
     return riga[0], riga
 
 
-@router.get("/{tool_id}", response_model=ToolDettaglio)
+@router.get(
+    "/{tool_id}",
+    response_model=ToolDettaglio,
+    responses=risposte({404: "Nessun tool registrato con quell'identificativo."}),
+)
 def dettaglio_tool(
     tool_id: str,
     operatore: Operatore,
@@ -150,9 +154,12 @@ def dettaglio_tool(
     "/{tool_id}/overrides",
     response_model=OverrideRisposta,
     status_code=status.HTTP_201_CREATED,
-    responses={
-        409: {"description": "Il tier richiesto non innalza il tier effettivo corrente."}
-    },
+    responses=risposte(
+        {
+            404: "Nessun tool registrato con quell'identificativo.",
+            409: "Il tier richiesto non innalza il tier effettivo corrente.",
+        }
+    ),
 )
 def innalza_tier(
     tool_id: str,

@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from backend.config import get_settings
+from backend.config import get_impostazioni_privilegiate, get_settings
 
 
 class Base(DeclarativeBase):
@@ -81,8 +81,12 @@ def privileged_session_factory() -> sessionmaker[Session]:
     """Sessioni con il ruolo proprietario. Solo per migrazioni e seed."""
     global _privileged_engine, _PrivilegedSession
     if _PrivilegedSession is None:
+        # Configurazione separata, non `get_settings()`: il seed non ha
+        # bisogno della chiave di firma del cookie ne' dell'URL del ruolo
+        # applicativo, e chiedergliele significava farlo fallire per
+        # requisiti che non sono suoi.
         _privileged_engine = create_engine(
-            get_settings().migrations_url, pool_pre_ping=True, future=True
+            get_impostazioni_privilegiate().url, pool_pre_ping=True, future=True
         )
         _PrivilegedSession = sessionmaker(
             bind=_privileged_engine,
