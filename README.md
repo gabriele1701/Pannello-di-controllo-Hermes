@@ -469,10 +469,18 @@ openapi.json       il contratto fra backend e frontend: si rigenera,
 requirements.txt   il lock: anche le versioni transitive, da cui
                    installa l'immagine
 migrations/        schema, vincoli, trigger, ruoli e concessioni
-frontend/          interfaccia
-scripts/           strumenti di sviluppo (esportazione del contratto)
+frontend/src/
+  api/             schema.d.ts generato dal contratto, client, lettura
+                   degli errori
+  auth/            sessione in cookie, protezione delle rotte
+  componenti/      shell, stati condivisi, i segni dei due assi
+  pagine/          le sei schermate piu' la catena del log
+  percorsi.ts      le rotte in un posto solo
+  styles.css       CSS scritto a mano, nessun framework
+scripts/           strumenti di sviluppo (esportazione del contratto,
+                   preparazione del .env)
 .github/
-  workflows/ci.yml contratto, suite, build dell'immagine, avvio a freddo
+  workflows/ci.yml contratto, tipi, suite, build dell'immagine, avvio a freddo
   scripts/         le verifiche, eseguibili anche a mano
 tests/             175 test: vincoli in SQL diretto, privilegi dei ruoli,
                    contratti delle API
@@ -565,6 +573,100 @@ Gli stessi test chiamano l'API, raccolgono gli errori **veri** e li validano
 contro lo schema che il contratto promette. Una `responses` è una promessa
 scritta a mano accanto a una rotta: senza qualcosa che la verifichi, resta
 vera solo finché nessuno cambia la rotta.
+
+## L'interfaccia
+
+Sei schermate, in italiano, CSS scritto a mano. L'unico utente è l'operatore
+umano, da browser: non c'è niente pensato per un client automatico, e questo
+vale anche per l'interfaccia.
+
+### Quello che si vede per primo è la divergenza
+
+Il catalogo porta una **fascia di classificazione** sul bordo sinistro di ogni
+riga, divisa in due metà: sopra il tier dichiarato, sotto quello effettivo.
+Quando coincidono si legge come una barra sola; quando divergono, il salto di
+colore si vede prima di aver letto una parola. È il segnale che un override è
+attivo, ed è il criterio §11 reso visibile invece che calcolabile.
+
+La colonna dei tier lo ripete poi a parole — `verde → giallo`, con il
+dichiarato in tono tenue e l'effettivo pieno. Mostrare solo l'effettivo
+nasconderebbe che qualcuno è intervenuto, che è l'unica cosa che quella
+colonna deve far notare.
+
+### I due assi non si fondono nemmeno nei colori
+
+Il tier vive nella sua scala verde/giallo/rosso; i dati personali sono un
+badge viola, cioè **fuori** da quella scala. Un booleano colorato con i colori
+di una scala a tre si leggerebbe come un suo quarto livello.
+
+Nel dettaglio di un tool i due assi stanno in due riquadri affiancati e di
+pari peso, ciascuno con scritto cosa comanda: l'asse tecnico dice *quanto
+spesso* si chiede conferma, i dati personali dicono *perché* la si chiede. I
+dati di esempio contengono il caso che lo dimostra — `osint.breach-check` è
+verde e riguarda persone fisiche — e la catena del log mostra lo stesso caso
+dal lato dell'esecuzione: un `tool_call` con tier effettivo verde, rifiutato
+perché il consenso per quello scope è scaduto.
+
+### Il declassamento non esiste, nemmeno disabilitato
+
+L'azione «Innalza tier» offre soltanto `tier_disponibili`, che il backend
+calcola. Quando quell'elenco è vuoto — un tool già a `rosso` — non c'è nessun
+comando, e al suo posto una frase dice che non c'è niente da innalzare. Non
+un bottone spento: un'opzione disabilitata insegna che esiste un modo e che
+oggi non è attivo, mentre qui il declassamento non è disattivato, non esiste.
+
+L'innalzamento passa da un dialogo, perché è l'unica azione irreversibile
+dell'applicazione: il riepilogo nomina il tool e i due tier, il motivo è
+obbligatorio, e un avviso dice che il vincolo sta nel database e non in
+quella pagina. Se nel frattempo il tier è cambiato sotto, il 409 del trigger
+compare lì dentro con il messaggio che il database ha scritto.
+
+### I messaggi del backend vanno a schermo interi
+
+`192.168.205.10/24` viene rifiutato con la spiegazione del perché: che ha bit
+a destra della maschera, in cosa verrebbe interpretato, quanti indirizzi
+sarebbero, e quali sono le due forme corrette. Quel testo arriva intero, sotto
+il campo che lo ha provocato. Sostituirlo con «valore non valido» lascerebbe
+riscrivere lo stesso errore in un'altra forma, ed è esattamente ciò che il
+messaggio esiste per evitare.
+
+Vale anche per i rifiuti dei trigger, che portano un `suggerimento`: rimuovere
+una rete che contiene alias viene bloccato con l'elenco degli alias che
+resterebbero fuori perimetro, e quel messaggio compare sotto la riga che lo ha
+provocato, non in cima alla pagina.
+
+### Dove finiscono i filtri, e perché non sempre nello stesso posto
+
+Il catalogo filtra nel browser, perché `/api/tools` non ha parametri di
+filtro; i consensi e il log filtrano nel server, perché le loro rotte li
+espongono. In entrambi i casi si segue quello che la rotta offre invece di
+inventare, e nessuna delle due schermate chiede un ordinamento: una rotta che
+accettasse un campo di ordinamento arbitrario accetterebbe un frammento di
+SQL.
+
+I filtri del log vivono nella query string: un log filtrato è una cosa che si
+manda a qualcuno, e un ricaricamento non deve perdere il punto in cui si stava
+guardando.
+
+### La sessione scade mentre si lavora
+
+Il cookie ha una durata, quindi una sessione muore con la pagina aperta. Il
+401 non è un errore come gli altri: viene notificato a un gestore unico, la
+shell riporta all'accesso **conservando la rotta di partenza**, e dopo il
+login si torna esattamente dove si era. La destinazione del ritorno viene
+convalidata prima di essere seguita — arriva dallo stato di navigazione, e
+seguirla com'è sarebbe un open redirect subito dopo che l'operatore ha
+digitato la password.
+
+### Nessun framework CSS, e nessun font remoto
+
+Il CSS è scritto a mano perché questa interfaccia ha sei schermate con la
+stessa struttura: le classi utili sono poche e si nominano. I caratteri sono
+quelli di sistema, senza richieste a terzi: un pannello di controllo della
+sicurezza che chiama un CDN a ogni caricamento racconta una cosa diversa da
+quella che dice.
+
+---
 
 ## Sicurezza dell'applicazione
 
@@ -713,17 +815,24 @@ troverebbero.
 
 ## Integrazione continua
 
-`.github/workflows/ci.yml` gira a ogni push, con quattro lavori:
+`.github/workflows/ci.yml` gira a ogni push, con cinque lavori:
 
 1. **`contratto`** — `openapi.json` corrisponde al codice delle rotte. Nessun
    database e nessun Docker, quindi è il più veloce a dire che qualcosa non
    torna.
-2. **`suite`** — i 175 test su un PostgreSQL 16 di servizio, con
+2. **`tipi`** — `frontend/src/api/schema.d.ts` corrisponde a `openapi.json`.
+   È lo stesso controllo del lavoro precedente, un livello più sotto: anche
+   quello è un file generato e committato, e senza una verifica smette di
+   corrispondere alla propria sorgente in silenzio. Il disallineamento non
+   rompe il build quando il contratto cresce in modo additivo — ciò che
+   compilava continua a compilare, manca solo il tipo nuovo — quindi è
+   proprio il caso che passa inosservato finché qualcuno non ne ha bisogno.
+3. **`suite`** — i 175 test su un PostgreSQL 16 di servizio, con
    l'applicazione che gira come `hermes_app`.
-3. **`immagine`** — `docker compose build --no-cache`, più la verifica che la
+4. **`immagine`** — `docker compose build --no-cache`, più la verifica che la
    `compose` sia YAML valido, che l'avvio *fallisca* senza i segreti, e che il
    container non giri come root.
-4. **`freddo`** — l'avvio vero dello stack da un `.env` scritto come lo
+5. **`freddo`** — l'avvio vero dello stack da un `.env` scritto come lo
    scriverebbe una persona seguendo questo README, poi tutte le verifiche
    contro lo stack in piedi.
 
