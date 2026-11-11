@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import Settings, get_settings
 from backend.db import get_db
+from backend.errors import risposte
 from backend.models import User
 from backend.schemas import LoginRichiesta, OperatoreRisposta
 from backend.security import (
@@ -36,7 +37,11 @@ _CREDENZIALI_ERRATE = HTTPException(
 )
 
 
-@router.post("/login", response_model=OperatoreRisposta)
+@router.post(
+    "/login",
+    response_model=OperatoreRisposta,
+    responses=risposte({401: "Credenziali non valide."}),
+)
 def login(
     richiesta: LoginRichiesta,
     response: Response,
@@ -71,7 +76,15 @@ def logout(
     chiudi_sessione(response, impostazioni)
 
 
-@router.get("/me", response_model=OperatoreRisposta)
+@router.get(
+    "/me",
+    response_model=OperatoreRisposta,
+    # Queste rotte stanno nel router pubblico, perche' il login e il logout
+    # sono quelle che la sessione la aprono e la chiudono. `/me` la richiede,
+    # con la dipendenza dichiarata qui dentro, quindi il suo 401 va dichiarato
+    # qui e non lo eredita dal router protetto.
+    responses=risposte({401: "Sessione assente, scaduta, o cookie non valido."}),
+)
 def me(operatore: Operatore) -> User:
     """L'operatore della sessione corrente."""
     return operatore

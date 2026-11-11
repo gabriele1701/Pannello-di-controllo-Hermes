@@ -523,23 +523,48 @@ Scrivere a mano i tipi delle richieste e delle risposte sarebbe il modo in cui
 le due metà divergono senza che nessuno se ne accorga: una risposta che cambia
 forma romperebbe il browser invece di rompere il controllo di tipo.
 
-### Debito noto: le risposte di errore non sono nel contratto
+### Anche le risposte di errore sono nel contratto
 
-`openapi.json` tipizza le risposte di successo e il 422 di Pydantic
-(`HTTPValidationError`), ma **non** le risposte di errore applicative. I 401,
-403, 404 e i 409 che `backend/errors.py` produce traducendo gli SQLSTATE dei
-trigger restituiscono `{"detail": {"messaggio", "suggerimento"}}` senza che
-quella forma compaia in nessuna `responses` delle rotte.
+Un errore applicativo ha questa forma, e `openapi.json` la dichiara come
+`RispostaErrore`:
 
-Di conseguenza `frontend/src/api/errori.ts` è l'unico punto dell'interfaccia
-che sa qualcosa che il contratto non dice: riconosce le due forme a runtime,
-in modo difensivo, invece di dichiarare un tipo che nessuno verifica. È
-annotato nel file, non nascosto.
+```json
+{ "detail": { "messaggio": "...", "suggerimento": "..." } }
+```
 
-Il modo di chiuderlo sta nel backend, non nell'interfaccia: un modello
-`ErroreApplicativo` dichiarato nelle `responses` delle rotte che lo producono,
-e `openapi.json` rigenerato. È rimasto fuori da questa consegna per tempo, non
-per disaccordo.
+`messaggio` dice cosa è stato rifiutato e perché; `suggerimento` dice cosa
+fare invece, e c'è quando il rifiuto viene da un trigger che lo scrive nel
+proprio `HINT`. Entrambi sono scritti per essere letti dall'operatore: vanno
+mostrati interi, non sostituiti con un testo generico.
+
+Le `responses` di ogni rotta si costruiscono con `risposte()`, in
+`backend/errors.py`, e dichiarano **solo i codici che quella rotta produce
+davvero**. Un elenco uguale per tutte sarebbe più corto e meno vero: direbbe
+all'interfaccia di gestire un 409 dove non arriva mai, e tacerebbe quando una
+rotta ne guadagna uno. Il 401 è l'eccezione, dichiarato una volta sul router
+protetto: lo produce la dipendenza di autenticazione, che vale per tutte le
+rotte di quel router.
+
+**Il 422 ha due forme**, e questa è la parte da conoscere prima di toccarlo.
+Quando il rifiuto nasce da un validator di `schemas.py` — la CIDR non
+canonica, per esempio — il corpo è quello di Pydantic, con la lista per
+campo. Quando nasce da un trigger — l'alias fuori perimetro — è quello
+applicativo. Le rotte dove possono arrivare entrambi dichiarano un `anyOf`
+fra le due; quelle dove ne arriva uno solo dichiarano quello.
+
+Una trappola, incontrata scrivendo questa parte: `responses={422:
+{"description": "..."}}` **non** cambia il testo di ciò che FastAPI genera,
+sostituisce l'intera voce, schema compreso. Due rotte di `scope.py` lo
+facevano in buona fede, e il loro tentativo di documentare meglio il 422
+aveva cancellato l'unica cosa che l'interfaccia poteva generare. Per questo
+`risposte()` ha un parametro `validazione=` invece di lasciarlo a una
+convenzione, e per questo `tests/test_contratto_errori.py` verifica che
+nessuna risposta di errore sia dichiarata senza schema.
+
+Gli stessi test chiamano l'API, raccolgono gli errori **veri** e li validano
+contro lo schema che il contratto promette. Una `responses` è una promessa
+scritta a mano accanto a una rotta: senza qualcosa che la verifichi, resta
+vera solo finché nessuno cambia la rotta.
 
 ## Sicurezza dell'applicazione
 
