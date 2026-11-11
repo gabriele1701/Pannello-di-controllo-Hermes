@@ -13,7 +13,7 @@
  * quarto livello della scala.
  */
 
-import type { Tier } from '../api/tipi'
+import type { StatoConsenso, Tier } from '../api/tipi'
 
 /** Pastiglia con il nome del tier. */
 export function PastigliaTier({ tier, tenue = false }: { tier: Tier; tenue?: boolean }) {
@@ -74,4 +74,18 @@ export function BadgeDatiPersonali() {
       Dati personali
     </span>
   )
+}
+
+/** Stato di un consenso: attivo, scaduto o revocato.
+ *
+ * Lo calcola il backend dalle date, e non e' memorizzato: una colonna di
+ * stato andrebbe aggiornata allo scadere, e nessuno la aggiornerebbe. Qui
+ * non si ricalcola, si colora.
+ *
+ * I colori non sono quelli del tier. «Scaduto» non e' un rischio medio e
+ * «revocato» non e' un rischio alto: sono fatti, e prenderli dalla scala
+ * verde/giallo/rosso suggerirebbe una gravita' che non hanno.
+ */
+export function BadgeStato({ stato }: { stato: StatoConsenso }) {
+  return <span className={`badge-stato badge-stato--${stato}`}>{stato}</span>
 }

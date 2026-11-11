@@ -180,6 +180,14 @@ code,
   letter-spacing: -0.015em;
 }
 
+/* Dentro una colonna con `gap`, il margine del titolo si somma allo spazio
+   della griglia e ne esce un vuoto doppio sotto l'intestazione. */
+.dettaglio > .pagina__titolo,
+.perimetro > .pagina__titolo,
+.consensi > .pagina__titolo {
+  margin-bottom: 0;
+}
+
 .pie {
   max-width: var(--colonna);
   width: 100%;
@@ -1027,4 +1035,61 @@ textarea.campo__ingresso {
 /* Un campo che il backend ha rifiutato si segnala da solo. */
 .campo__ingresso[aria-invalid='true'] {
   border-color: var(--rosso);
+}
+
+/* --------------------------------------------------------------------- */
+/* Consensi                                                                */
+/* --------------------------------------------------------------------- */
+
+.consensi {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.consensi .riepilogo {
+  margin-bottom: 0;
+  max-width: 82ch;
+}
+
+/* Lo stato di un consenso non prende i colori del tier: «scaduto» non e' un
+   rischio medio e «revocato» non e' un rischio alto. Sono fatti, non
+   gravita', e la scala a tre suggerirebbe una lettura sbagliata. */
+.badge-stato {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--bordo-vivo);
+  border-radius: var(--raggio);
+  color: var(--testo-tenue);
+  font-size: 0.8125rem;
+}
+
+.badge-stato--attivo {
+  border-color: color-mix(in srgb, var(--verde) 55%, transparent);
+  background: var(--verde-debole);
+  color: #7fd4a1;
+}
+
+.badge-stato--scaduto {
+  border-style: dashed;
+}
+
+.badge-stato--revocato {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* Una riga non piu' in vigore resta leggibile ma non compete con quelle
+   attive: e' storia, e la storia non si cancella — si attenua. */
+.riga--spenta td:not(:first-child) {
+  color: var(--testo-fioco);
+}
+
+.ambito-agente {
+  color: var(--testo-tenue);
+  font-style: italic;
+}
+
+.consensi .filtri {
+  margin-bottom: 0;
 }
