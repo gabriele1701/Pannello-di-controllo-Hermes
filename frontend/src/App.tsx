@@ -16,6 +16,7 @@ import { RichiedeSessione } from './auth/RichiedeSessione'
 import { Shell } from './componenti/Shell'
 import { Accesso } from './pagine/Accesso'
 import { Catalogo } from './pagine/Catalogo'
+import { Consensi } from './pagine/Consensi'
 import { DettaglioTool } from './pagine/DettaglioTool'
 import { InCostruzione } from './pagine/InCostruzione'
 import { NonTrovata } from './pagine/NonTrovata'
@@ -34,15 +35,7 @@ export function App() {
               <Route index element={<Catalogo />} />
               <Route path="tool/:toolId" element={<DettaglioTool />} />
               <Route path="perimetro" element={<Perimetro />} />
-              <Route
-                path="consensi"
-                element={
-                  <InCostruzione
-                    titolo="Consensi"
-                    descrizione="Consensi per scope con stato attivo, scaduto o revocato."
-                  />
-                }
-              />
+              <Route path="consensi" element={<Consensi />} />
               <Route
                 path="log"
                 element={
