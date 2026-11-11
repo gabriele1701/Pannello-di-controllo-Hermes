@@ -43,6 +43,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from backend.config import get_settings
+from backend.errors import risposte
 from backend.routers import audit, auth, consents, scope, tools
 from backend.security import operatore_corrente
 
@@ -80,6 +81,13 @@ def crea_app() -> FastAPI:
     api_protette = APIRouter(
         prefix="/api",
         dependencies=[Depends(operatore_corrente)],
+        # Il 401 e' dichiarato qui, non rotta per rotta, per la stessa
+        # ragione per cui la dipendenza sta qui: lo produce
+        # `operatore_corrente`, che vale per tutte le rotte di questo router.
+        # Ripeterlo su ognuna significherebbe poterlo dimenticare su una.
+        responses=risposte(
+            {401: "Sessione assente, scaduta, o cookie non valido."}
+        ),
     )
     api_protette.include_router(tools.router)
     api_protette.include_router(consents.router)

@@ -32,6 +32,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
+from backend.errors import risposte
 from backend.models import OwnerAgent, ScopeConsent, Tool
 from backend.schemas import ConsensoRichiesta, ConsensoRisposta
 from backend.security import Operatore
@@ -94,7 +95,20 @@ def elenca_consensi(
     return [_risposta(c, adesso) for c in db.scalars(stmt)]
 
 
-@router.post("", response_model=ConsensoRisposta, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ConsensoRisposta,
+    status_code=status.HTTP_201_CREATED,
+    responses=risposte(
+        {
+            404: "Il consenso nomina un tool che non esiste.",
+            422: (
+                "Il tool nominato appartiene a un altro agente, oppure il "
+                "consenso viola un vincolo di integrita'."
+            ),
+        }
+    ),
+)
 def concedi_consenso(
     richiesta: ConsensoRichiesta,
     operatore: Operatore,
@@ -144,7 +158,16 @@ def concedi_consenso(
     return _risposta(consenso, dt.datetime.now(tz=dt.UTC))
 
 
-@router.post("/{consenso_id}/revoke", response_model=ConsensoRisposta)
+@router.post(
+    "/{consenso_id}/revoke",
+    response_model=ConsensoRisposta,
+    responses=risposte(
+        {
+            404: "Nessun consenso con quell'identificativo.",
+            409: "Il consenso era gia' stato revocato.",
+        }
+    ),
+)
 def revoca_consenso(
     consenso_id: int,
     operatore: Operatore,

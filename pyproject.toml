@@ -28,6 +28,12 @@ dependencies = [
 dev = [
     "pytest==8.3.4",
     "httpx==0.28.1",
+    # Serve a un test solo, e per una ragione precisa: validare i corpi di
+    # errore VERI contro lo schema che `openapi.json` dichiara. L'alternativa
+    # era riscrivere un validatore di JSON Schema a mano dentro i test, cioe'
+    # verificare il contratto con uno strumento meno affidabile del
+    # contratto. Resta fuori da requirements.txt: l'immagine non lo installa.
+    "jsonschema==4.26.0",
 ]
 
 [build-system]

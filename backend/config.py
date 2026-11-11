@@ -8,6 +8,26 @@ con un messaggio che dice cosa manca.
 
 Le variabili non segrete — nome utente del database, ambiente — hanno un
 default, perche' conoscerle non da' accesso a niente.
+
+DUE CONFIGURAZIONI, NON UNA
+---------------------------
+
+`Settings` e' la configurazione di cio' che **serve richieste**: l'URL del
+ruolo applicativo, la chiave di firma del cookie, la durata della sessione.
+
+`ImpostazioniPrivilegiate` e' quella di cio' che **modifica lo schema**:
+migrazioni e seed, che girano con il ruolo proprietario.
+
+Sono separate perche' hanno bisogni disgiunti, e tenerle insieme faceva
+pagare al seed dei requisiti che non sono suoi: `python -m backend.seed`
+pretendeva `DATABASE_URL` e `APP_SECRET_KEY` — una chiave di firma, in un
+programma che non serve nessuna richiesta e non firma nessun cookie — solo
+perche' passava da `Settings`. Chi lo eseguiva a mano doveva inventarsi due
+valori per soddisfare un controllo, che e' il modo in cui un controllo
+diventa un rito.
+
+`migrations/env.py` leggeva gia' l'ambiente da se', per la stessa ragione.
+Questa classe gli da' un posto invece di lasciarlo un caso a parte.
 """
 
 from __future__ import annotations
@@ -38,31 +58,6 @@ class Settings(BaseSettings):
             "non puo' disabilitarne i trigger. Obbligatorio."
         ),
     )
-
-    migrations_database_url: str | None = Field(
-        default=None,
-        alias="MIGRATIONS_DATABASE_URL",
-        description=(
-            "URL con cui girano le migrazioni e il seed. Punta al ruolo "
-            "PROPRIETARIO delle tabelle, che puo' modificare lo schema perche' "
-            "e' il suo compito. Distinta da DATABASE_URL: se l'applicazione in "
-            "esercizio si connettesse con questo ruolo, potrebbe disabilitare "
-            "i propri vincoli con un ALTER TABLE."
-        ),
-    )
-
-    @property
-    def migrations_url(self) -> str:
-        """URL per le operazioni privilegiate: migrazioni e seed.
-
-        Se MIGRATIONS_DATABASE_URL non e' impostata ricade su DATABASE_URL.
-        E' una comodita' di sviluppo locale, dove spesso esiste un solo
-        ruolo, **non** una configurazione valida in esercizio: il compose
-        imposta le due URL distinte e rende obbligatoria la password del
-        ruolo applicativo, quindi il ripiego non si verifica in un
-        dispiegamento.
-        """
-        return self.migrations_database_url or self.database_url
 
     # -- sessione ----------------------------------------------------------- #
 
@@ -118,6 +113,62 @@ class Settings(BaseSettings):
         su ``http://localhost`` e il login non funzionerebbe.
         """
         return self.app_env == "production"
+
+
+class ImpostazioniPrivilegiate(BaseSettings):
+    """Cio' che serve a migrazioni e seed, e nient'altro.
+
+    Nessuna chiave di firma e nessuna durata di sessione: un programma che
+    scrive tabelle e poi esce non ha sessioni da firmare. Dichiarare qui
+    soltanto cio' che si usa fa fallire l'avvio per le ragioni vere.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    migrations_database_url: str | None = Field(
+        default=None,
+        alias="MIGRATIONS_DATABASE_URL",
+    )
+
+    #: Ripiego, non alternativa: vedi `url`.
+    database_url: str | None = Field(default=None, alias="DATABASE_URL")
+
+    @property
+    def url(self) -> str:
+        """URL del ruolo con cui girano migrazioni e seed.
+
+        Con `MIGRATIONS_DATABASE_URL` assente ricade su `DATABASE_URL`, che
+        e' una comodita' per lo sviluppo locale dove spesso esiste un solo
+        ruolo -- **non** una configurazione valida in esercizio. Il compose
+        imposta le due URL distinte, quindi in un dispiegamento il ripiego
+        non si verifica.
+
+        L'ordine e' quello: prima la privilegiata. Invertirlo significherebbe
+        far girare le migrazioni con il ruolo applicativo, che non possiede
+        le tabelle e non potrebbe modificarle -- con un errore sui permessi
+        invece di uno sulla configurazione.
+        """
+        url = self.migrations_database_url or self.database_url
+        if not url:
+            raise RuntimeError(
+                "Ne' MIGRATIONS_DATABASE_URL ne' DATABASE_URL sono "
+                "impostate: migrazioni e seed non sanno a quale database "
+                "connettersi.\n"
+                "\n"
+                "  export MIGRATIONS_DATABASE_URL="
+                "postgresql+psycopg://proprietario:...@localhost:5432/hermes_panel"
+            )
+        return url
+
+
+@lru_cache(maxsize=1)
+def get_impostazioni_privilegiate() -> ImpostazioniPrivilegiate:
+    """Impostazioni del ruolo proprietario, lette una volta sola."""
+    return ImpostazioniPrivilegiate()  # type: ignore[call-arg]
 
 
 @lru_cache(maxsize=1)

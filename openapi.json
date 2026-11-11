@@ -220,6 +220,33 @@
         "title": "ConsensoRisposta",
         "type": "object"
       },
+      "ErroreApplicativo": {
+        "description": "Il contenuto di `detail` in una risposta di errore applicativa.",
+        "properties": {
+          "messaggio": {
+            "description": "Che cosa e' stato rifiutato, e perche'. Scritto per essere letto dall'operatore: va mostrato intero, non sostituito con un testo generico.",
+            "title": "Messaggio",
+            "type": "string"
+          },
+          "suggerimento": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Che cosa fare invece. Presente quando il rifiuto viene da un trigger che lo dichiara nel proprio HINT; assente altrimenti.",
+            "title": "Suggerimento"
+          }
+        },
+        "required": [
+          "messaggio"
+        ],
+        "title": "ErroreApplicativo",
+        "type": "object"
+      },
       "EventoRisposta": {
         "properties": {
           "agent": {
@@ -589,6 +616,19 @@
         ],
         "title": "RiskTier",
         "type": "string"
+      },
+      "RispostaErrore": {
+        "description": "Il corpo intero, `detail` compreso.\n\nFastAPI avvolge il `detail` di una `HTTPException` in un oggetto, quindi\nil corpo che arriva al client e' questo e non `ErroreApplicativo` da\nsolo. Dichiarare il modello interno e chiamarlo contratto sarebbe\ndichiarare una forma che nessuna risposta ha.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ErroreApplicativo"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "RispostaErrore",
+        "type": "object"
       },
       "TargetKind": {
         "description": "Che bersaglio accetta un tool, e quindi se il perimetro gli si applica.",
@@ -1013,15 +1053,32 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RispostaErrore"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Intervallo vuoto, o parametri di pagina fuori scala."
           }
         },
         "summary": "Elenca Eventi",
@@ -1073,6 +1130,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Nessun evento con quel correlation_id."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1114,6 +1191,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Credenziali non valide."
           },
           "422": {
             "content": {
@@ -1179,6 +1266,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
           },
           "422": {
             "content": {
@@ -1275,6 +1372,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1333,15 +1440,42 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Il consenso nomina un tool che non esiste."
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RispostaErrore"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Il tool nominato appartiene a un altro agente, oppure il consenso viola un vincolo di integrita'."
           }
         },
         "summary": "Concedi Consenso",
@@ -1391,6 +1525,36 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Nessun consenso con quell'identificativo."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Il consenso era gia' stato revocato."
           },
           "422": {
             "content": {
@@ -1471,6 +1635,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1529,8 +1703,42 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Un alias con quel nome esiste gia'."
+          },
           "422": {
-            "description": "L'alias non cade in nessuna rete dichiarata."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RispostaErrore"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "L'alias non cade in nessuna rete dichiarata del perimetro."
           }
         },
         "summary": "Aggiungi Alias",
@@ -1573,6 +1781,26 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Nessun alias con quell'identificativo."
           },
           "422": {
             "content": {
@@ -1626,6 +1854,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
           },
           "422": {
             "content": {
@@ -1685,8 +1923,35 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "La rete e' gia' dichiarata nel perimetro."
+          },
           "422": {
-            "description": "CIDR non in forma canonica."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "CIDR non in forma canonica, oppure campi mancanti."
           }
         },
         "summary": "Aggiungi Rete",
@@ -1730,15 +1995,42 @@
           "204": {
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Nessuna rete con quell'identificativo."
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RispostaErrore"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Rimuovere la rete lascerebbe degli alias fuori perimetro."
           }
         },
         "summary": "Rimuovi Rete",
@@ -1783,6 +2075,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
           },
           "422": {
             "content": {
@@ -1842,6 +2144,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Nessun tool registrato con quell'identificativo."
           },
           "422": {
             "content": {
@@ -1912,7 +2234,34 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Nessun tool registrato con quell'identificativo."
+          },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
             "description": "Il tier richiesto non innalza il tier effettivo corrente."
           },
           "422": {

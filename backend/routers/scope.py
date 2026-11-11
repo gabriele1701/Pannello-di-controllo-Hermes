@@ -24,7 +24,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
-from backend.errors import traduci_errore_db
+from backend.errors import risposte, traduci_errore_db
 from backend.models import ScopeAlias, ScopeNetwork
 from backend.schemas import AliasRichiesta, AliasRisposta, ReteRichiesta, ReteRisposta
 from backend.security import Operatore
@@ -46,7 +46,14 @@ def elenca_reti(operatore: Operatore, db: Session = Depends(get_db)) -> list[Sco
     "/networks",
     response_model=ReteRisposta,
     status_code=status.HTTP_201_CREATED,
-    responses={422: {"description": "CIDR non in forma canonica."}},
+    responses=risposte(
+        {409: "La rete e' gia' dichiarata nel perimetro."},
+        # Il 422 di questa rotta ha una forma sola, quella di Pydantic: la
+        # forma canonica della CIDR la verifica un validator di `schemas.py`,
+        # non un trigger. Prima qui c'era `{422: {"description": ...}}`, che
+        # sembrava cambiare il testo e invece cancellava lo schema.
+        validazione="CIDR non in forma canonica, oppure campi mancanti.",
+    ),
 )
 def aggiungi_rete(
     richiesta: ReteRichiesta,
@@ -76,7 +83,16 @@ def aggiungi_rete(
     return rete
 
 
-@router.delete("/networks/{rete_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/networks/{rete_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=risposte(
+        {
+            404: "Nessuna rete con quell'identificativo.",
+            422: "Rimuovere la rete lascerebbe degli alias fuori perimetro.",
+        }
+    ),
+)
 def rimuovi_rete(
     rete_id: int,
     operatore: Operatore,
@@ -117,7 +133,12 @@ def elenca_alias(operatore: Operatore, db: Session = Depends(get_db)) -> list[Sc
     "/aliases",
     response_model=AliasRisposta,
     status_code=status.HTTP_201_CREATED,
-    responses={422: {"description": "L'alias non cade in nessuna rete dichiarata."}},
+    responses=risposte(
+        {
+            409: "Un alias con quel nome esiste gia'.",
+            422: "L'alias non cade in nessuna rete dichiarata del perimetro.",
+        }
+    ),
 )
 def aggiungi_alias(
     richiesta: AliasRichiesta,
@@ -150,7 +171,11 @@ def aggiungi_alias(
     return alias
 
 
-@router.delete("/aliases/{alias_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/aliases/{alias_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=risposte({404: "Nessun alias con quell'identificativo."}),
+)
 def rimuovi_alias(
     alias_id: int,
     operatore: Operatore,
