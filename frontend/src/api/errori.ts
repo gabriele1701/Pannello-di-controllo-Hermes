@@ -1,39 +1,54 @@
 /** Lettura dei corpi di errore dell'API.
  *
- * DEBITO NOTO, dichiarato invece che nascosto
- * -------------------------------------------
+ * Il contratto dichiara le forme
+ * ----------------------------------
  *
- * `openapi.json` tipizza le risposte di successo e il 422 di Pydantic
- * (`HTTPValidationError`), ma **non** le risposte di errore applicative:
- * 401, 403, 404 e i 409 che `backend/errors.py` produce traducendo gli
- * SQLSTATE dei trigger restituiscono `{"detail": {"messaggio", "suggerimento"}}`
- * senza che quella forma compaia in nessuna `responses` del contratto.
+ * `openapi.json` ha due schemi per questo: `RispostaErrore`, cioe' il corpo
+ * intero, e `ErroreApplicativo`, cioe' il contenuto del suo `detail` —
+ * `messaggio` obbligatorio, `suggerimento` quando il rifiuto viene da un
+ * trigger che lo dichiara nel proprio HINT. I tipi qui sotto vengono da li',
+ * non sono scritti a mano, e il 403 non e' piu' fra i casi attesi perche'
+ * nessuna rotta lo produce.
  *
- * Qui dunque il generatore non aiuta, e questo e' l'unico punto
- * dell'interfaccia che sa qualcosa che `openapi.json` non dice. Per non
- * fingere che sia tipizzato, il corpo si legge in modo difensivo: si
- * riconosce la forma a runtime e si ricade su un messaggio generico quando
- * non e' nessuna delle due. Nessun cast, nessuna interfaccia scritta a mano
- * spacciata per contratto.
+ * Perche' le forme si riconoscono ancora a runtime
+ * ------------------------------------------------
  *
- * Il modo di chiuderlo e' nel backend, non qui: un modello `ErroreApplicativo`
- * dichiarato nelle `responses` delle rotte che lo producono, e
- * `scripts/esporta_openapi.py` rigenerato. Finche' non c'e', vale questo file.
+ * Non e' diffidenza verso il backend: un tipo TypeScript descrive cosa
+ * *dovrebbe* arrivare, non valida cosa arriva. Restano tre casi in cui il
+ * corpo non ha la forma dichiarata, e nessuno dei tre e' un difetto:
  *
- * Le due forme
- * ------------
+ * 1. **Il 422 e' un `anyOf` di due schemi** — `RispostaErrore` e
+ *    `HTTPValidationError` — su alias, rimozione di una rete e consensi. E'
+ *    il contratto stesso a dire che le forme sono due, quindi distinguerle
+ *    qui e' leggere il contratto, non aggirarlo.
+ * 2. **`backend/main.py` risponde `{"detail": {"messaggio": ...}}` sul
+ *    fallback SPA** per una rotta `/api` inesistente, con
+ *    `include_in_schema=False`: una forma reale che il contratto non
+ *    descrive, deliberatamente.
+ * 3. **Un 500, o una risposta del proxy**, non hanno nessuna forma
+ *    dichiarata: un corpo vuoto o una pagina HTML sono possibili, e un
+ *    accesso non protetto solleverebbe mentre si sta gia' gestendo un
+ *    errore.
+ *
+ * I messaggi vanno a schermo interi
+ * ---------------------------------
+ *
+ * Quelli del perimetro nascono nei validator di `backend/schemas.py` e nei
+ * trigger: spiegano *perche'* `192.168.205.10/24` e' rifiutato, ed e'
+ * l'unica parte utile. Sostituirli con «valore non valido» lascerebbe
+ * riscrivere lo stesso errore in un'altra forma.
+ *
+ * Le tre forme che arrivano:
  *
  *   applicativa   {"detail": {"messaggio": "...", "suggerimento": "..."}}
  *   Pydantic      {"detail": [{"loc": ["body","cidr"], "msg": "...", ...}]}
  *   FastAPI nuda  {"detail": "testo"}
- *
- * La distinzione conta: i messaggi che spiegano *perche'* `192.168.205.10/24`
- * viene rifiutato nascono nei validator di `backend/schemas.py`, quindi
- * arrivano nella forma Pydantic, mentre quelli dei trigger del perimetro
- * arrivano nella forma applicativa con il `suggerimento`. Entrambi vanno a
- * schermo interi: sono scritti per essere letti dall'operatore, e
- * sostituirli con «valore non valido» butterebbe via l'unica parte utile.
  */
+
+import type { components } from './schema'
+
+/** Il contenuto di `detail` in una risposta di errore applicativa. */
+export type ErroreApplicativo = components['schemas']['ErroreApplicativo']
 
 /** Un errore dell'API gia' ridotto a cio' che si mostra. */
 export interface Problema {
@@ -53,13 +68,32 @@ export interface ProblemaCampo {
   messaggio: string
 }
 
+/** Messaggi di ripiego, per quando il corpo non porta un `messaggio`.
+ *
+ * Niente 403: dopo la revisione del contratto nessuna rotta lo produce. Le
+ * tabelle append-only sono protette da trigger, ma non esiste una rotta che
+ * tenti di scriverci, quindi quel rifiuto non puo' arrivare fin qui.
+ */
 const GENERICI: Record<number, string> = {
   400: 'Richiesta non valida.',
-  403: 'Operazione non permessa.',
   404: 'Risorsa inesistente.',
   409: 'La richiesta è in conflitto con lo stato attuale.',
   422: 'Il valore inviato non è accettabile.',
   500: 'Errore interno del server.',
+}
+
+/** Riconosce `ErroreApplicativo`, o restituisce null se non e' quello.
+ *
+ * Il controllo e' su `messaggio`, l'unico campo che il contratto dichiara
+ * obbligatorio: un `detail` che non lo ha non e' questa forma, qualunque
+ * altra cosa contenga.
+ */
+function comeErroreApplicativo(detail: unknown): ErroreApplicativo | null {
+  const o = oggetto(detail)
+  const messaggio = testo(o?.['messaggio'])
+  if (!messaggio) return null
+  const suggerimento = testo(o?.['suggerimento'])
+  return suggerimento ? { messaggio, suggerimento } : { messaggio }
 }
 
 function oggetto(v: unknown): Record<string, unknown> | null {
@@ -123,14 +157,14 @@ export function interpretaProblema(stato: number, corpo: unknown): Problema {
   const generico = GENERICI[stato] ?? `La richiesta è fallita (HTTP ${stato}).`
   const detail = oggetto(corpo)?.['detail']
 
-  // Forma applicativa: l'oggetto dei trigger e delle HTTPException del backend.
-  const applicativo = oggetto(detail)
-  const messaggio = testo(applicativo?.['messaggio'])
-  if (messaggio) {
-    const suggerimento = testo(applicativo?.['suggerimento'])
+  // Forma applicativa: `RispostaErrore`, il corpo che il contratto dichiara
+  // per 401, 404, 409 e per meta' dei 422.
+  const applicativo = comeErroreApplicativo(detail)
+  if (applicativo) {
+    const suggerimento = testo(applicativo.suggerimento)
     return suggerimento
-      ? { stato, messaggio, suggerimento, campi: [] }
-      : { stato, messaggio, campi: [] }
+      ? { stato, messaggio: applicativo.messaggio, suggerimento, campi: [] }
+      : { stato, messaggio: applicativo.messaggio, campi: [] }
   }
 
   // Forma Pydantic: un errore per campo.

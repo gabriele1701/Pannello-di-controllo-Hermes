@@ -13,8 +13,10 @@
 #
 # Quattro lavori, in ordine di costo crescente:
 #
-#   1. contratto — openapi.json corrisponde al codice. Nessun database,
-#                  nessun Docker: il piu' veloce a dire che qualcosa non torna.
+#   1. contratto — openapi.json corrisponde al codice, e i tipi
+#                  dell'interfaccia corrispondono a openapi.json. Nessun
+#                  database, nessun Docker: i piu' veloci a dire che qualcosa
+#                  non torna.
 #   2. suite     — i test su un PostgreSQL di servizio. Trova quasi tutto.
 #   3. immagine  — docker compose build. Trova cio' che si rompe solo dentro il
 #                  container: npm ci su musl, l'utente non root, le dipendenze.
@@ -124,6 +126,56 @@ jobs:
         # qui: cosi' chi lavora in locale incontra lo stesso messaggio della
         # CI, con dentro il comando esatto per rigenerare.
         run: python3 scripts/esporta_openapi.py --check
+
+  tipi:
+    name: Tipi dell'interfaccia (schema.d.ts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # `openapi.json` e' generato dal codice e verificato dal lavoro
+    # `contratto`. `frontend/src/api/schema.d.ts` e' generato da
+    # `openapi.json` ed era verificato da niente: un file committato che
+    # nessuno controlla smette di corrispondere alla sua sorgente senza che
+    # il fallimento arrivi a nessuno, ed e' la stessa classe di problema che
+    # `contratto` ha chiuso un livello piu' sopra.
+    #
+    # Il disallineamento non rompe il build quando il contratto cresce in
+    # modo additivo -- cio' che compilava continua a compilare, manca solo il
+    # tipo nuovo -- quindi e' proprio il caso che passa inosservato finche'
+    # qualcuno non ne ha bisogno.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installa le dipendenze
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Rigenera i tipi da openapi.json
+        working-directory: frontend
+        run: npm run genera-tipi
+
+      - name: schema.d.ts corrisponde a openapi.json
+        # `git diff --exit-code` e non un confronto scritto a mano: la
+        # rigenerazione e' deterministica, quindi qualunque differenza e' una
+        # differenza vera, e la diff la mostra gia' leggibile.
+        run: |
+          if ! git diff --exit-code -- frontend/src/api/schema.d.ts; then
+            echo >&2
+            echo "frontend/src/api/schema.d.ts non corrisponde a openapi.json." >&2
+            echo >&2
+            echo "E' generato, non si modifica a mano. Rigenerarlo e committarlo" >&2
+            echo "insieme al cambiamento del contratto:" >&2
+            echo >&2
+            echo "  cd frontend && npm run genera-tipi" >&2
+            exit 1
+          fi
+          echo "schema.d.ts allineato a openapi.json"
 
   immagine:
     name: Build dell'immagine

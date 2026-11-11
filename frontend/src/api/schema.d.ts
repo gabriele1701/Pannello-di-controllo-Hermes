@@ -478,6 +478,22 @@ export interface components {
             /** Tool Identificativo */
             tool_identificativo: string | null;
         };
+        /**
+         * ErroreApplicativo
+         * @description Il contenuto di `detail` in una risposta di errore applicativa.
+         */
+        ErroreApplicativo: {
+            /**
+             * Messaggio
+             * @description Che cosa e' stato rifiutato, e perche'. Scritto per essere letto dall'operatore: va mostrato intero, non sostituito con un testo generico.
+             */
+            messaggio: string;
+            /**
+             * Suggerimento
+             * @description Che cosa fare invece. Presente quando il rifiuto viene da un trigger che lo dichiara nel proprio HINT; assente altrimenti.
+             */
+            suggerimento?: string | null;
+        };
         /** EventoRisposta */
         EventoRisposta: {
             agent: components["schemas"]["OwnerAgent"] | null;
@@ -625,6 +641,18 @@ export interface components {
          */
         RiskTier: "verde" | "giallo" | "rosso";
         /**
+         * RispostaErrore
+         * @description Il corpo intero, `detail` compreso.
+         *
+         *     FastAPI avvolge il `detail` di una `HTTPException` in un oggetto, quindi
+         *     il corpo che arriva al client e' questo e non `ErroreApplicativo` da
+         *     solo. Dichiarare il modello interno e chiamarlo contratto sarebbe
+         *     dichiarare una forma che nessuna risposta ha.
+         */
+        RispostaErrore: {
+            detail: components["schemas"]["ErroreApplicativo"];
+        };
+        /**
          * TargetKind
          * @description Che bersaglio accetta un tool, e quindi se il perimetro gli si applica.
          * @enum {string}
@@ -755,13 +783,22 @@ export interface operations {
                     "application/json": components["schemas"]["PaginaEventi"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Intervallo vuoto, o parametri di pagina fuori scala. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["RispostaErrore"] | components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -786,6 +823,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CatenaEventi"];
+                };
+            };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Nessun evento con quel correlation_id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
                 };
             };
             /** @description Validation Error */
@@ -819,6 +874,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperatoreRisposta"];
+                };
+            };
+            /** @description Credenziali non valide. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
                 };
             };
             /** @description Validation Error */
@@ -870,6 +934,15 @@ export interface operations {
                     "application/json": components["schemas"]["OperatoreRisposta"];
                 };
             };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -904,6 +977,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConsensoRisposta"][];
+                };
+            };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
                 };
             };
             /** @description Validation Error */
@@ -941,13 +1023,31 @@ export interface operations {
                     "application/json": components["schemas"]["ConsensoRisposta"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Il consenso nomina un tool che non esiste. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Il tool nominato appartiene a un altro agente, oppure il consenso viola un vincolo di integrita'. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["RispostaErrore"] | components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -972,6 +1072,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConsensoRisposta"];
+                };
+            };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Nessun consenso con quell'identificativo. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Il consenso era gia' stato revocato. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
                 };
             };
             /** @description Validation Error */
@@ -1027,6 +1154,15 @@ export interface operations {
                     "application/json": components["schemas"]["AliasRisposta"][];
                 };
             };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1062,12 +1198,32 @@ export interface operations {
                     "application/json": components["schemas"]["AliasRisposta"];
                 };
             };
-            /** @description L'alias non cade in nessuna rete dichiarata. */
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Un alias con quel nome esiste gia'. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description L'alias non cade in nessuna rete dichiarata del perimetro. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"] | components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -1090,6 +1246,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Nessun alias con quell'identificativo. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -1120,6 +1294,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReteRisposta"][];
+                };
+            };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
                 };
             };
             /** @description Validation Error */
@@ -1157,12 +1340,32 @@ export interface operations {
                     "application/json": components["schemas"]["ReteRisposta"];
                 };
             };
-            /** @description CIDR non in forma canonica. */
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description La rete e' gia' dichiarata nel perimetro. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description CIDR non in forma canonica, oppure campi mancanti. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -1186,13 +1389,31 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Nessuna rete con quell'identificativo. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Rimuovere la rete lascerebbe degli alias fuori perimetro. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["RispostaErrore"] | components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1215,6 +1436,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolRiepilogo"][];
+                };
+            };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
                 };
             };
             /** @description Validation Error */
@@ -1248,6 +1478,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDettaglio"];
+                };
+            };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Nessun tool registrato con quell'identificativo. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
                 };
             };
             /** @description Validation Error */
@@ -1287,12 +1535,32 @@ export interface operations {
                     "application/json": components["schemas"]["OverrideRisposta"];
                 };
             };
+            /** @description Sessione assente, scaduta, o cookie non valido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
+            /** @description Nessun tool registrato con quell'identificativo. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
+            };
             /** @description Il tier richiesto non innalza il tier effettivo corrente. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RispostaErrore"];
+                };
             };
             /** @description Validation Error */
             422: {
