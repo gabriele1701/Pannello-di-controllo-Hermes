@@ -722,6 +722,51 @@ verde e riguarda persone fisiche — e la catena del log mostra lo stesso caso
 dal lato dell'esecuzione: un `tool_call` con tier effettivo verde, rifiutato
 perché il consenso per quello scope è scaduto.
 
+### Due perimetri, due gruppi, e un elenco che non c'è
+
+La schermata del perimetro è divisa in due gruppi con un'intestazione
+ciascuno — bersagli di rete, bersagli su filesystem — e non in una tabella
+sola con una colonna «tipo». Hanno regole e verifiche diverse: unirli
+visivamente direbbe che sono la stessa cosa.
+
+Per i processi non c'è un terzo elenco, e al suo posto c'è la ragione per cui
+non esiste, scritta in pagina con lo stesso peso degli elenchi che esistono.
+Una sezione mancante si legge come una funzione non ancora fatta; una
+spiegazione si legge come una decisione.
+
+Nella stessa pagina c'è scritto anche ciò che questa applicazione **non**
+può garantire: che un bersaglio cada davvero dentro un prefisso. Quel
+controllo richiede di risolvere i collegamenti simbolici nel filesystem del
+container, e lo fa `hermes-core` a esecuzione. Dirlo nell'interfaccia, dove
+l'operatore dichiara il prefisso, evita che la riga appena scritta sembri una
+garanzia più forte di quella che è.
+
+Un prefisso non si modifica: si rimuove e si dichiara di nuovo, così resta
+tracciato cosa era autorizzato prima. Il backend non ha `PUT` né `PATCH` su
+quella risorsa, e l'interfaccia non offre un comando che il server
+rifiuterebbe.
+
+### Il bersaglio nel catalogo, e perché l'isolamento non è un terzo badge
+
+Il genere di bersaglio compare nel catalogo come testo leggibile — «File o
+directory», «Processo in esecuzione» — e quell'etichetta arriva dal backend,
+con il resto del vocabolario del dominio. Scriverla nell'interfaccia
+significherebbe avere due traduzioni di `process` destinate a divergere.
+
+`requires_container` è un'informazione di sicurezza e si vede, ma **non** come
+terzo badge colorato: sta sotto il bersaglio, come riga minore. La riga del
+catalogo porta già due vocabolari visivi — la scala del tier e il viola dei
+dati personali — e un terzo segno competerebbe con la divergenza dei tier,
+che è ciò che quella tabella deve far notare per prima.
+
+Nel dettaglio di un tool, il bersaglio rimanda alla sezione del perimetro che
+lo riguarda: le reti per un tool `host`, i prefissi per uno `path`. Per uno
+`process` non c'è collegamento, perché non c'è una tabella da consultare — e
+al suo posto c'è la frase che lo spiega. Dove l'isolamento è imposto dal
+`CHECK` del database, il dettaglio lo dice: «il container c'è perché qualcuno
+l'ha configurato» e «il container c'è perché il database non accetta il
+contrario» sono due garanzie diverse.
+
 ### Il declassamento non esiste, nemmeno disabilitato
 
 L'azione «Innalza tier» offre soltanto `tier_disponibili`, che il backend
