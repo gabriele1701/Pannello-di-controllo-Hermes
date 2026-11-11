@@ -236,10 +236,126 @@ def verifica_criteri(client: Client) -> None:
             _ko(f"il messaggio sulla CIDR non {cosa}")
 
 
+def verifica_perimetro_percorsi(client: Client) -> None:
+    """Il perimetro dei percorsi, contro lo stack vero.
+
+    Esiste per una ragione specifica, oltre a verificare le tre rotte:
+    `scope_paths` nasce con la migrazione 0004, e la 0002 non ha
+    `ALTER DEFAULT PRIVILEGES`. Se le due righe di `GRANT` mancassero,
+    lo schema sarebbe valido, la suite di pytest passerebbe -- gira con lo
+    stesso ruolo ma su un database costruito dalle stesse migrazioni -- e
+    `GET /api/scope/paths` risponderebbe 500 solo nello stack dispiegato.
+    Qui quel caso diventa un lavoro rosso.
+    """
+    stato, percorsi = client.chiama("/api/scope/paths")
+    if stato != 200:
+        _ko(f"elenco dei percorsi: atteso 200, ricevuto {stato} ({percorsi})")
+        return
+    if isinstance(percorsi, list) and percorsi:
+        _ok(f"perimetro dei percorsi popolato: {len(percorsi)} prefissi")
+    else:
+        _ko("perimetro dei percorsi vuoto: il seed non ha scritto nessun prefisso")
+
+    # Scrittura e rimozione: le concessioni INSERT e DELETE sulla tabella
+    # nuova, piu' la sequenza del bigserial.
+    stato, creato = client.chiama(
+        "/api/scope/paths",
+        metodo="POST",
+        corpo={"prefix": "/srv/verifica-a-freddo", "label": "Scritto dal verificatore"},
+    )
+    if stato == 201:
+        _ok("prefisso dichiarato (201)")
+        stato, _ = client.chiama(
+            f"/api/scope/paths/{creato['id']}", metodo="DELETE"
+        )
+        if stato == 204:
+            _ok("prefisso rimosso (204)")
+        else:
+            _ko(f"rimozione del prefisso: atteso 204, ricevuto {stato}")
+    else:
+        _ko(f"dichiarazione di un prefisso: atteso 201, ricevuto {stato} ({creato})")
+
+    # Il rifiuto, e la sua spiegazione. I vincoli sono nel database e la
+    # rotta traduce il nome del vincolo violato: se la traduzione mancasse,
+    # qui arriverebbe un 500 invece di un 422.
+    casi = [
+        ("prefisso relativo", {"prefix": "srv/analisi", "label": "x"}, "assoluto"),
+        ("risalita nel prefisso", {"prefix": "/srv/../etc", "label": "x"}, "'..'"),
+        ("la radice come perimetro", {"prefix": "/", "label": "x"}, "perimetro"),
+    ]
+    for descrizione, corpo, frammento in casi:
+        stato, risposta = client.chiama(
+            "/api/scope/paths", metodo="POST", corpo=corpo
+        )
+        testo = json.dumps(risposta, ensure_ascii=False).lower()
+        if stato != 422:
+            _ko(f"{descrizione}: atteso 422, ricevuto {stato} ({risposta})")
+        elif frammento not in testo:
+            _ko(f"{descrizione}: rifiutato senza spiegazione ({testo[:120]})")
+        elif "suggerimento" not in testo:
+            _ko(f"{descrizione}: la spiegazione non dice cosa fare")
+        else:
+            _ok(f"{descrizione} rifiutato con una spiegazione (422)")
+
+    # Uno spazio finale va RIFIUTATO, non rimosso: un 201 qui vorrebbe dire
+    # che lo stack autorizza un percorso diverso da quello richiesto.
+    stato, risposta = client.chiama(
+        "/api/scope/paths",
+        metodo="POST",
+        corpo={"prefix": "/srv/con-spazio ", "label": "x"},
+    )
+    if stato == 422:
+        _ok("spazio finale rifiutato invece che rimosso (422)")
+    else:
+        _ko(
+            f"spazio finale: atteso 422, ricevuto {stato} -- lo stack "
+            f"normalizza il prefisso e autorizza un percorso diverso"
+        )
+
+
+def verifica_bersagli_estesi(client: Client) -> None:
+    """Il catalogo mostra i bersagli che non sono host.
+
+    Senza una riga che li usi, i due valori nuovi dell'enum sarebbero
+    rappresentabili e invisibili: chi apre l'applicazione troverebbe un
+    catalogo di soli bersagli di rete e crederebbe che il modello sia quello.
+    """
+    stato, catalogo = client.chiama("/api/tools")
+    if stato != 200:
+        _ko(f"catalogo: atteso 200, ricevuto {stato}")
+        return
+
+    per_tipo = {t["target_kind"]: t for t in catalogo}
+    for tipo in ("path", "process"):
+        tool = per_tipo.get(tipo)
+        if tool is None:
+            _ko(f"nessun tool con target_kind '{tipo}' nel catalogo")
+            continue
+        if not tool.get("requires_container"):
+            _ko(
+                f"il tool '{tool['tool_id']}' ha target_kind '{tipo}' senza "
+                f"requires_container: il vincolo tools_bersaglio_isolato non "
+                f"e' applicato"
+            )
+        elif not tool.get("bersaglio_etichetta"):
+            _ko(f"il tool '{tool['tool_id']}' non porta l'etichetta del bersaglio")
+        else:
+            _ok(
+                f"bersaglio '{tipo}' nel catalogo, isolato, etichettato "
+                f"«{tool['bersaglio_etichetta']}»"
+            )
+
+
 def verifica_senza_sessione(base: str) -> None:
     """Nessuna rotta protetta risponde senza sessione."""
     anonimo = Client(base)
-    for percorso in ("/api/tools", "/api/audit", "/api/consents", "/api/scope/networks"):
+    for percorso in (
+        "/api/tools",
+        "/api/audit",
+        "/api/consents",
+        "/api/scope/networks",
+        "/api/scope/paths",
+    ):
         stato, _ = anonimo.chiama(percorso, con_sessione=False)
         if stato == 401:
             _ok(f"{percorso} senza sessione: 401")
@@ -267,6 +383,10 @@ def main() -> int:
     verifica_log(client)
     print("== criteri di accettazione (SPEC §11) ==")
     verifica_criteri(client)
+    print("== perimetro dei percorsi ==")
+    verifica_perimetro_percorsi(client)
+    print("== bersagli che non sono host ==")
+    verifica_bersagli_estesi(client)
     print("== rotte protette ==")
     verifica_senza_sessione(argomenti.base)
 
