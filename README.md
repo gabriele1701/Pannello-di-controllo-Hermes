@@ -589,25 +589,34 @@ per disaccordo.
 Serve un PostgreSQL 16 raggiungibile.
 
 ```bash
-# Entrambe le URL vanno impostate subito, anche se migrazioni e seed usano
-# solo quella del ruolo proprietario: la configurazione si valida tutta
-# insieme all'avvio di qualunque comando, quindi `python -m backend.seed`
-# fallisce se DATABASE_URL non c'è ancora.
-export MIGRATIONS_DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
-export DATABASE_URL="postgresql+psycopg://hermes_app:una-password-di-sviluppo@localhost:5432/hermes_panel"
-export HERMES_APP_DB_PASSWORD="una-password-di-sviluppo"
-export APP_SECRET_KEY="$(openssl rand -hex 32)"
-export HERMES_ADMIN_PASSWORD="una-password-di-sviluppo"
-
 pip install -e '.[dev]'
 
-# ruolo proprietario: schema e dati di esempio
+# --- ruolo proprietario: schema e dati di esempio ---
+# Serve solo la sua URL. Migrazioni e seed non chiedono i segreti
+# dell'applicazione, perché non ne usano nessuno.
+export MIGRATIONS_DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
+export HERMES_APP_DB_PASSWORD="una-password-di-sviluppo"  # la 0002 crea hermes_app con questa
+export HERMES_ADMIN_PASSWORD="una-password-di-sviluppo"   # il seed crea l'operatore con questa
+
 alembic upgrade head        # crea anche il ruolo hermes_app
 python -m backend.seed
 
-# ruolo applicativo: il server
+# --- ruolo applicativo: il server ---
+# Da qui servono i segreti dell'applicazione, e non prima.
+export DATABASE_URL="postgresql+psycopg://hermes_app:una-password-di-sviluppo@localhost:5432/hermes_panel"
+export APP_SECRET_KEY="$(openssl rand -hex 32)"
+
 uvicorn backend.main:app --reload
 ```
+
+I due blocchi sono separati perché lo sono anche le configurazioni.
+`backend/config.py` tiene distinta quella di ciò che **serve richieste** —
+l'URL del ruolo applicativo, la chiave di firma del cookie — da quella di ciò
+che **modifica lo schema**, cioè migrazioni e seed. Prima erano una sola, e
+`python -m backend.seed` non partiva senza `APP_SECRET_KEY`: una chiave di
+firma, in un programma che non serve nessuna richiesta e non firma nessun
+cookie. Chi lo eseguiva a mano doveva inventarsi un valore per soddisfare un
+controllo, che è il modo in cui un controllo diventa un rito.
 
 Se `MIGRATIONS_DATABASE_URL` non è impostata, migrazioni e seed ricadono su
 `DATABASE_URL`. È una comodità per lo sviluppo locale, dove spesso esiste un
