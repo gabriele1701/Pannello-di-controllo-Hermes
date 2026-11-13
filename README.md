@@ -13,6 +13,28 @@ conservata.**
 | Ruolo | Registro dello stato | Esecuzione e applicazione |
 | Gestisce | Tier dei tool, innalzamenti, consensi per scope, perimetro dei bersagli, vista del log | Invocazione dei tool, gate, scrittura del log |
 
+## Stato alla consegna
+
+**`hermes-core` non è ancora pronto.** Il server MCP non esegue invocazioni
+reali, quindi la policy che questo pannello dichiara non è ancora applicata da
+nessun gate: l'insieme delle due parti va letto come un *proof of concept*
+dell'integrazione, non come un sistema in esercizio.
+
+Quello che è finito è questa metà. Gli invarianti vivono nei vincoli di
+PostgreSQL e sono verificati in SQL diretto oltre che attraverso l'API, le sei
+schermate sono complete, la CI avvia lo stack da un clone pulito a ogni push,
+e il modello dati è quello vero di `hermes-core` valore per valore — così
+l'integrazione sarà un collegamento e non una riscrittura.
+
+Quello che è simulato è il confine fra le due metà: il log è popolato dai dati
+di esempio invece che dall'ingestione del file JSONL reale, e il flusso di
+conferma non attraversa i due lati. L'elenco preciso è in
+[fuori dal perimetro di questa consegna](#fuori-dal-perimetro-di-questa-consegna).
+
+**Il lavoro dei prossimi giorni** è finire il server MCP e adattare le due
+componenti perché l'ambiente funzioni per intero: l'ingestione del log, il
+gate che legge da qui la policy, e la conferma che torna all'operatore.
+
 ## Gli agenti non devono poter raggiungere questa applicazione
 
 È il vincolo architetturale da cui dipendono tutti gli altri. Questa
@@ -405,7 +427,7 @@ di uno. Dichiarare '192.168.205.0/24' se si intende tutta la rete, oppure
 
 Il messaggio spiega il *perché* perché è un errore che si commette credendo
 di aver dichiarato un host: chi lo scrive pensa di aver autorizzato un
-indirizzo e ne ha autorizzati 254. Un messaggio che dicesse solo «valore non
+indirizzo e ne ha autorizzati 256. Un messaggio che dicesse solo «valore non
 valido» lascerebbe chi lo legge a riscrivere lo stesso errore in un'altra
 forma.
 
@@ -474,7 +496,7 @@ frontend/src/
                    degli errori
   auth/            sessione in cookie, protezione delle rotte
   componenti/      shell, stati condivisi, i segni dei due assi
-  pagine/          le sei schermate piu' la catena del log
+  pagine/          le sei schermate più la catena del log
   percorsi.ts      le rotte in un posto solo
   styles.css       CSS scritto a mano, nessun framework
 scripts/           strumenti di sviluppo (esportazione del contratto,
@@ -482,7 +504,7 @@ scripts/           strumenti di sviluppo (esportazione del contratto,
 .github/
   workflows/ci.yml contratto, tipi, suite, build dell'immagine, avvio a freddo
   scripts/         le verifiche, eseguibili anche a mano
-tests/             175 test: vincoli in SQL diretto, privilegi dei ruoli,
+tests/             186 test: vincoli in SQL diretto, privilegi dei ruoli,
                    contratti delle API
 ```
 
@@ -827,7 +849,7 @@ troverebbero.
    rompe il build quando il contratto cresce in modo additivo — ciò che
    compilava continua a compilare, manca solo il tipo nuovo — quindi è
    proprio il caso che passa inosservato finché qualcuno non ne ha bisogno.
-3. **`suite`** — i 175 test su un PostgreSQL 16 di servizio, con
+3. **`suite`** — i 186 test su un PostgreSQL 16 di servizio, con
    l'applicazione che gira come `hermes_app`.
 4. **`immagine`** — `docker compose build --no-cache`, più la verifica che la
    `compose` sia YAML valido, che l'avvio *fallisca* senza i segreti, e che il
@@ -865,6 +887,9 @@ il ruolo applicativo non arrivi nemmeno al trigger.
 - l'ingestione live del file di log JSONL;
 - il flusso di conferma (*elicitation* MCP);
 - multi-utente, ruoli, organizzazioni.
+
+Le prime tre dipendono da `hermes-core` e sono il lavoro dei prossimi giorni;
+la quarta è fuori dall'ambito del progetto.
 
 Il **modello dati** però è quello vero, non una versione semplificata: i
 vocabolari sono gli stessi di `hermes-core`
