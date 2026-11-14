@@ -199,18 +199,24 @@ def nuovo_tool(db: Session):
 def perimetro_pulito(db: Session) -> Iterator[None]:
     """Perimetro vuoto all'inizio e alla fine del test.
 
-    `scope_networks` e `scope_aliases` non sono append-only — il perimetro si
-    modifica, e' il suo scopo — quindi qui si puo' ripulire davvero.
+    Entrambi i perimetri: reti con alias, e prefissi di percorso. Nessuno dei
+    due e' append-only — un perimetro si modifica, e' il suo scopo — quindi
+    qui si puo' ripulire davvero.
+
     Gli alias prima delle reti: il trigger che vieta gli alias orfani
-    rifiuterebbe l'ordine inverso.
+    rifiuterebbe l'ordine inverso. I percorsi non hanno quel problema,
+    perche' non esistono alias che vi puntino.
     """
-    db.execute(text("DELETE FROM scope_aliases"))
-    db.execute(text("DELETE FROM scope_networks"))
-    db.commit()
+    _svuota(db)
     yield
     db.rollback()
+    _svuota(db)
+
+
+def _svuota(db: Session) -> None:
     db.execute(text("DELETE FROM scope_aliases"))
     db.execute(text("DELETE FROM scope_networks"))
+    db.execute(text("DELETE FROM scope_paths"))
     db.commit()
 
 

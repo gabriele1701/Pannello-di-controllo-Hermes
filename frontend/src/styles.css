@@ -1295,3 +1295,76 @@ textarea.campo__ingresso {
   min-width: 0;
   word-break: break-word;
 }
+
+/* --------------------------------------------------------------------- */
+/* Perimetro: due gruppi, e i percorsi                                     */
+/* --------------------------------------------------------------------- */
+
+/* I due perimetri sono separati da un'intestazione e non da una colonna
+   «tipo» in una tabella sola: hanno regole e verifiche diverse, e unirli
+   suggerirebbe che siano la stessa cosa. */
+.gruppo {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.5rem;
+  /* Lo stacco fra i due gruppi: una riga, non un riquadro dentro un
+     riquadro. */
+  border-top: 1px solid var(--bordo);
+}
+
+.gruppo__titolo {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.gruppo__nota {
+  margin: -0.4rem 0 0;
+  max-width: 82ch;
+  color: var(--testo-tenue);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.gruppo__nota strong {
+  color: var(--testo);
+}
+
+/* La ragione per cui questo elenco non esiste merita lo stesso peso degli
+   elenchi che esistono: e' una decisione, non una mancanza. */
+.nota-processi {
+  margin: 0;
+  max-width: 82ch;
+  padding: 0.875rem 1rem;
+  border: 1px dashed var(--bordo-vivo);
+  border-radius: var(--raggio);
+  color: var(--testo-tenue);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.nota-processi strong {
+  color: var(--testo);
+}
+
+.campo__ingresso--largo {
+  min-width: 18rem;
+}
+
+/* Il bersaglio nel catalogo ---------------------------------------------- */
+
+/* L'isolamento sta sotto il bersaglio, non accanto al tier: e' una
+   proprieta' di dove il tool agisce, e un terzo badge colorato
+   competerebbe con la divergenza dei tier, che e' cio' che questa tabella
+   deve far notare per prima. */
+.bersaglio__isolamento {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--testo-fioco);
+  font-size: 0.75rem;
+}
+
+.elenco-dati__nota {
+  color: var(--testo-fioco);
+}

@@ -55,6 +55,7 @@ def _riepilogo(tool: Tool, riga) -> dict:
         "personal_data": tool.personal_data,
         "requires_container": tool.requires_container,
         "target_kind": tool.target_kind,
+        "bersaglio_etichetta": tool.target_kind.etichetta,
         "description": tool.description,
         "override_count": riga.override_count,
         "last_override_at": riga.last_override_at,

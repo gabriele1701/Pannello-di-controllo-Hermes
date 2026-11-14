@@ -16,10 +16,19 @@ def test_catalogo_porta_entrambi_i_tier(autenticato, dati_esempio) -> None:
     Mostrare il solo effettivo nasconderebbe che qualcuno e' intervenuto, che
     e' precisamente l'informazione per cui esiste la colonna.
     """
+    from backend.seed import TOOL
+
     risposta = autenticato.get("/api/tools")
     assert risposta.status_code == 200
     catalogo = risposta.json()
-    assert len(catalogo) == 8
+
+    # Il conteggio viene dal seed, non da un numero scritto qui. Prima era
+    # `== 8`, e la prima aggiunta al catalogo -- i due tool con bersaglio di
+    # tipo percorso e processo -- ha fatto fallire un test che non aveva
+    # niente a che vedere con loro. Legarlo alla sorgente lo rende una
+    # verifica vera: dice che il catalogo espone TUTTO cio' che il seed
+    # scrive, invece di dire che sono otto.
+    assert len(catalogo) == len(TOOL)
 
     per_id = {t["tool_id"]: t for t in catalogo}
 

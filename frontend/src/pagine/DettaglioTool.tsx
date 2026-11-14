@@ -20,6 +20,8 @@ import { Link, useParams } from 'react-router-dom'
 
 import { richiedi } from '../api/client'
 import type { Tier, ToolDettaglio } from '../api/tipi'
+
+type Tool = ToolDettaglio
 import { DialogoInnalzamento } from '../componenti/DialogoInnalzamento'
 import { BadgeDatiPersonali, CellaTier, PastigliaTier } from '../componenti/Distintivi'
 import { Caricamento, Errore } from '../componenti/Stati'
@@ -171,14 +173,31 @@ export function DettaglioTool() {
           </dd>
 
           <dt>Bersaglio</dt>
+          {/* L'etichetta la calcola il backend, dove sta il resto del
+              vocabolario del dominio. Riscriverla qui vorrebbe dire avere due
+              versioni di «processo» che prima o poi divergono. */}
           <dd>
-            {tool.target_kind === 'none'
-              ? 'nessuno: non agisce su un host della rete'
-              : 'un host, che deve cadere dentro il perimetro dichiarato'}
+            {tool.bersaglio_etichetta}
+            <PerimetroApplicabile genere={tool.target_kind} />
           </dd>
 
           <dt>Esecuzione</dt>
-          <dd>{tool.requires_container ? 'in container dedicato' : 'sulla macchina del server'}</dd>
+          <dd>
+            {tool.requires_container ? (
+              <>
+                in container isolato
+                {ISOLAMENTO_IMPOSTO.has(tool.target_kind) && (
+                  <span className="elenco-dati__nota">
+                    {' '}
+                    obbligatorio per questo genere di bersaglio: lo impone un vincolo
+                    del database, non la configurazione del tool
+                  </span>
+                )}
+              </>
+            ) : (
+              'sulla macchina del server'
+            )}
+          </dd>
 
           <dt>Registrato il</dt>
           <dd>{istante(tool.registered_at)}</dd>
@@ -246,6 +265,45 @@ export function DettaglioTool() {
         />
       )}
     </section>
+  )
+}
+
+/** I generi di bersaglio per cui il container non e' una scelta.
+ *
+ * Il `CHECK` su `tools` rifiuta un tool `path` o `process` senza
+ * `requires_container`. Dirlo qui distingue «il container c'e' perche'
+ * qualcuno l'ha configurato» da «il container c'e' perche' il database non
+ * accetta il contrario», che sono due garanzie diverse.
+ */
+const ISOLAMENTO_IMPOSTO = new Set<Tool['target_kind']>(['path', 'process'])
+
+/** Dove si dichiara il perimetro che vale per questo tool.
+ *
+ * Per `host` e `path` c'e' un elenco da consultare, e il collegamento porta
+ * alla sezione giusta. Per `process` non c'e': il perimetro e' il container,
+ * e un collegamento a una tabella inesistente sarebbe peggio di una frase.
+ */
+function PerimetroApplicabile({ genere }: { genere: Tool['target_kind'] }) {
+  if (genere === 'none') return null
+
+  if (genere === 'process') {
+    return (
+      <span className="elenco-dati__nota">
+        {' '}
+        il perimetro è il container stesso: non c’è un elenco di processi
+        autorizzati, perché un PID è effimero e un nome è aggirabile
+      </span>
+    )
+  }
+
+  const ancora = genere === 'host' ? 'rete' : 'percorsi'
+  const nome = genere === 'host' ? 'reti e alias' : 'prefissi di percorso'
+  return (
+    <span className="elenco-dati__nota">
+      {' '}
+      deve cadere dentro il perimetro dichiarato:{' '}
+      <Link to={`${ROTTE.perimetro}#${ancora}`}>{nome}</Link>
+    </span>
   )
 }
 

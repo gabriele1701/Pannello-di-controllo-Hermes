@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
-from tests.helpers import sqlstate
+from tests.helpers import nome_vincolo, sqlstate
 
 # --------------------------------------------------------------------------- #
 # Monotonia del tier
@@ -475,3 +475,209 @@ def test_hash_password_non_argon2_rifiutato(db: Session) -> None:
             )
         )
     db.rollback()
+
+
+# --------------------------------------------------------------------------- #
+# Forma dei prefissi del perimetro dei percorsi
+#
+# Ogni regola ha il proprio vincolo con un nome parlante, e questi test
+# verificano QUALE vincolo rifiuta: con sette regole sullo stesso campo,
+# «e' stato rifiutato» non dice se e' stato rifiutato per la ragione giusta.
+# Il caso di `/` lo dimostra -- all'inizio veniva intercettato dal vincolo
+# sulla lunghezza, che e' la risposta sbagliata alla domanda «perche' non
+# posso dichiarare la radice?».
+# --------------------------------------------------------------------------- #
+
+
+def _percorso(db: Session, prefisso: str, etichetta: str = "etichetta di prova"):
+    return db.execute(
+        text(
+            "INSERT INTO scope_paths (prefix, label) "
+            "VALUES (:p, :l) RETURNING id"
+        ),
+        {"p": prefisso, "l": etichetta},
+    ).scalar_one()
+
+
+@pytest.mark.parametrize(
+    ("prefisso", "vincolo"),
+    [
+        pytest.param("srv/analisi", "scope_paths_prefix_assoluto", id="relativo"),
+        pytest.param("x", "scope_paths_prefix_assoluto", id="senza-barra"),
+        pytest.param("/", "scope_paths_prefix_non_radice", id="radice"),
+        pytest.param(
+            "/srv/analisi/../etc", "scope_paths_prefix_senza_risalita", id="risalita"
+        ),
+        pytest.param(
+            "/srv//analisi", "scope_paths_prefix_senza_doppie_barre", id="doppia-barra"
+        ),
+        pytest.param(
+            "/srv/analisi/", "scope_paths_prefix_senza_barra_finale", id="barra-finale"
+        ),
+        pytest.param(
+            "/srv/ana\\lisi", "scope_paths_prefix_senza_backslash", id="backslash"
+        ),
+        pytest.param(
+            "/srv/analisi ",
+            "scope_paths_prefix_senza_spazi_esterni",
+            id="spazio-finale",
+        ),
+        pytest.param(
+            "/srv/ana\tlisi", "scope_paths_prefix_stampabile", id="tabulazione"
+        ),
+        pytest.param(
+            "/srv/ana\x7flisi", "scope_paths_prefix_stampabile", id="del"
+        ),
+        pytest.param("/" + "a" * 299, "scope_paths_prefix_lunghezza", id="troppo-lungo"),
+    ],
+)
+def test_prefisso_non_canonico_rifiutato(
+    db: Session, prefisso: str, vincolo: str
+) -> None:
+    """Ogni regola di forma, in SQL diretto, e dal vincolo che la esprime."""
+    with pytest.raises(IntegrityError) as info:
+        _percorso(db, prefisso)
+    db.rollback()
+    assert nome_vincolo(info.value) == vincolo
+
+
+@pytest.mark.parametrize(
+    "prefisso",
+    [
+        pytest.param("/x", id="il-piu-corto"),
+        pytest.param("/srv/hermes/analisi-2026", id="normale"),
+        pytest.param("/srv/dati condivisi", id="con-spazio-interno"),
+        pytest.param("/" + "b" * 255, id="al-limite-di-lunghezza"),
+    ],
+)
+def test_prefisso_canonico_accettato(db: Session, prefisso: str) -> None:
+    """La controprova: le regole non rifiutano cio' che devono ammettere.
+
+    `/srv/dati condivisi` e' il caso che conta: uno spazio INTERNO e' parte
+    di un nome di directory legittimo, e vietarlo sarebbe una regola sul
+    filesystem di qualcun altro. Solo gli spazi esterni sono un errore di
+    trascrizione.
+    """
+    assert _percorso(db, prefisso) > 0
+    db.rollback()
+
+
+def test_prefisso_duplicato_rifiutato(db: Session) -> None:
+    _percorso(db, "/srv/unico")
+    with pytest.raises(IntegrityError) as info:
+        _percorso(db, "/srv/unico", "un altro nome")
+    db.rollback()
+    assert nome_vincolo(info.value) == "scope_paths_prefix_key"
+
+
+def test_etichetta_vuota_rifiutata(db: Session) -> None:
+    """L'etichetta dice perche' quel percorso e' autorizzato."""
+    with pytest.raises(IntegrityError) as info:
+        _percorso(db, "/srv/senza-etichetta", "   ")
+    db.rollback()
+    assert nome_vincolo(info.value) == "scope_paths_label_non_vuota"
+
+
+# --------------------------------------------------------------------------- #
+# L'isolamento come vincolo
+#
+# Per i processi il perimetro E' il container, perche' un PID non e'
+# dichiarabile come policy. Questo vincolo e' il modo in cui quella frase
+# diventa verificabile invece di restare una nota nel README.
+# --------------------------------------------------------------------------- #
+
+
+def _registra_tool(
+    db: Session, tool_id: str, *, target_kind: str, requires_container: bool
+) -> int:
+    return db.execute(
+        text(
+            """
+            INSERT INTO tools (tool_id, agent, declared_tier, personal_data,
+                               requires_container, target_kind, exec_path,
+                               exec_sha256, exec_args, description)
+            VALUES (:t, 'vuln_assessment', 'giallo', false, :rc, :tk,
+                    'agents/prova/x.py',
+                    '34b7aa6afc7f96e5c88ecfd8f4305a0739743bc5a1f7aa27ee2b63546518d3a8',
+                    '{}', 'Tool di prova.')
+            RETURNING id
+            """
+        ),
+        {"t": tool_id, "rc": requires_container, "tk": target_kind},
+    ).scalar_one()
+
+
+@pytest.mark.parametrize("target_kind", ["path", "process"])
+def test_bersaglio_non_di_rete_senza_container_rifiutato(
+    db: Session, target_kind: str
+) -> None:
+    """Nemmeno il PROPRIETARIO delle tabelle puo' registrarlo.
+
+    Il test gira con il ruolo proprietario, che e' quello che registra i
+    tool: se il vincolo valesse solo per il ruolo applicativo non
+    proteggerebbe dal percorso che i tool li scrive davvero.
+    """
+    with pytest.raises(IntegrityError) as info:
+        _registra_tool(
+            db,
+            f"prova.{target_kind}-senza-container",
+            target_kind=target_kind,
+            requires_container=False,
+        )
+    db.rollback()
+    assert nome_vincolo(info.value) == "tools_bersaglio_isolato"
+
+
+@pytest.mark.parametrize(
+    ("target_kind", "requires_container"),
+    [
+        pytest.param("path", True, id="path-con-container"),
+        pytest.param("process", True, id="process-con-container"),
+        pytest.param("host", False, id="host-senza-container"),
+        pytest.param("none", False, id="none-senza-container"),
+    ],
+)
+def test_il_vincolo_non_tocca_gli_altri_casi(
+    db: Session, target_kind: str, requires_container: bool
+) -> None:
+    """Controprova: il vincolo non e' piu' largo di quello che dichiara.
+
+    `host` e `none` senza container restano registrabili. Un vincolo che
+    richiedesse l'isolamento a tutti sarebbe passato egualmente dai test
+    sopra, e avrebbe reso non registrabile mezzo catalogo.
+    """
+    # Il `tool_id` resta minuscolo: `tools_tool_id_formato` non ammette
+    # maiuscole, e interpolare `requires_container` lo rendeva
+    # `prova.none-False`. Il test fallisce per il vincolo sbagliato, che e'
+    # peggio di non averlo.
+    isolamento = "con" if requires_container else "senza"
+    assert (
+        _registra_tool(
+            db,
+            f"prova.{target_kind}-{isolamento}-container",
+            target_kind=target_kind,
+            requires_container=requires_container,
+        )
+        > 0
+    )
+    db.rollback()
+
+
+def test_un_tool_esistente_non_puo_diventare_non_isolato(db: Session) -> None:
+    """Il vincolo vale sugli UPDATE, non solo sugli INSERT.
+
+    Senza questo, la via piu' breve per aggirarlo sarebbe registrare il tool
+    come `host` e poi cambiargli il bersaglio.
+    """
+    _registra_tool(
+        db, "prova.diventa-process", target_kind="host", requires_container=False
+    )
+    with pytest.raises(IntegrityError) as info:
+        db.execute(
+            text(
+                "UPDATE tools SET target_kind = 'process' "
+                "WHERE tool_id = 'prova.diventa-process'"
+            )
+        )
+    db.rollback()
+    assert nome_vincolo(info.value) == "tools_bersaglio_isolato"

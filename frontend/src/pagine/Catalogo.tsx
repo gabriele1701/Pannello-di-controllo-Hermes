@@ -215,6 +215,7 @@ function TabellaTool({ tool }: { tool: ToolRiepilogo[] }) {
           </th>
           <th scope="col">Tool</th>
           <th scope="col">Agente</th>
+          <th scope="col">Bersaglio</th>
           <th scope="col">Tier dichiarato ed effettivo</th>
           <th scope="col">Innalzamenti</th>
         </tr>
@@ -239,6 +240,24 @@ function TabellaTool({ tool }: { tool: ToolRiepilogo[] }) {
             </td>
 
             <td className="tabella__tenue">{t.agente_etichetta}</td>
+
+            {/* L'etichetta viene dal backend, dove sta il resto del
+                vocabolario del dominio: `bersaglio_etichetta` e non una
+                mappa scritta qui, che sarebbe una seconda traduzione da
+                tenere allineata.
+
+                L'isolamento non e' un terzo badge colorato. La riga porta
+                gia' due vocabolari visivi -- la scala del tier e il viola
+                dei dati personali -- e un terzo segno competerebbe con la
+                divergenza dei tier, che e' il motivo per cui questa tabella
+                esiste. Sta qui sotto, come riga minore, dove si legge
+                insieme al bersaglio a cui si riferisce. */}
+            <td className="tabella__tenue">
+              {t.bersaglio_etichetta}
+              {t.requires_container && (
+                <span className="bersaglio__isolamento">in container isolato</span>
+              )}
+            </td>
 
             <td>
               <CellaTier

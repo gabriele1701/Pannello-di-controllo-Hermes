@@ -45,6 +45,7 @@ from backend.models import (
     ScopeAlias,
     ScopeConsent,
     ScopeNetwork,
+    ScopePath,
     TargetKind,
     TierOverride,
     Tool,
@@ -164,6 +165,45 @@ TOOL = [
         "exec_args": ["--threads", "4"],
         "description": "Prova credenziali note contro un servizio. Intrusiva e riguarda persone.",
     },
+    # -- bersagli che non sono host ----------------------------------------- #
+    #
+    # I due casi che la migrazione 0004 rende rappresentabili. Stanno nel seed
+    # perche' un valore di enum che nessuna riga usa non si vede: chi apre
+    # l'applicazione per la prima volta troverebbe un catalogo di soli
+    # bersagli di rete e un perimetro di sole reti, e crederebbe che il
+    # modello sia quello.
+    #
+    # Entrambi hanno `requires_container` vero, e non per scelta editoriale:
+    # il vincolo `tools_bersaglio_isolato` non permette altro. Un tool che
+    # punta a file o processi senza isolamento non e' registrabile.
+    {
+        "tool_id": "analisi.rea-decompile",
+        "agent": OwnerAgent.PENTEST_KALI,
+        "declared_tier": RiskTier.GIALLO,
+        "personal_data": False,
+        "requires_container": True,
+        "target_kind": TargetKind.PATH,
+        "exec_path": "agents/pentest_kali/rea_decompile.py",
+        "exec_args": ["--no-network"],
+        "description": (
+            "Decompila un binario e ne riassume le funzioni. Statica, ma apre "
+            "un file scelto a ogni invocazione."
+        ),
+    },
+    {
+        "tool_id": "analisi.frida-hook",
+        "agent": OwnerAgent.PENTEST_KALI,
+        "declared_tier": RiskTier.ROSSO,
+        "personal_data": False,
+        "requires_container": True,
+        "target_kind": TargetKind.PROCESS,
+        "exec_path": "agents/pentest_kali/frida_hook.py",
+        "exec_args": ["--no-pause"],
+        "description": (
+            "Aggancia un processo in esecuzione e ne traccia le chiamate. "
+            "Modifica il comportamento del programma agganciato."
+        ),
+    },
 ]
 
 # --------------------------------------------------------------------------- #
@@ -238,13 +278,36 @@ def _crea_override(db: Session, tool: dict[str, Tool]) -> None:
 
 
 def _crea_perimetro(db: Session) -> None:
-    """Una rete e due alias, gli stessi del laboratorio di hermes-core."""
+    """I due perimetri: reti con alias, e prefissi di percorso.
+
+    Sono due e non uno perche' le regole sono diverse, e il seed lo mostra
+    invece di dirlo: di una rete il database verifica l'appartenenza, di un
+    percorso soltanto la forma del prefisso.
+    """
     db.add(ScopeNetwork(cidr="192.168.205.0/24", label="Laboratorio Hermes (VM su VMware)"))
     db.flush()
     # Gli alias dopo la rete: il trigger verifica il contenimento
     # all'inserimento, e con il perimetro ancora vuoto li rifiuterebbe.
     db.add(ScopeAlias(name="lab-web", address="192.168.205.20"))
     db.add(ScopeAlias(name="lab-kali", address="192.168.205.30"))
+    db.flush()
+
+    # Due prefissi e non uno: il secondo mostra che il perimetro dei percorsi
+    # e' un elenco, e che la rimozione di una riga non tocca le altre. Nessun
+    # alias, per i percorsi: ricordare `/srv/hermes/campioni` non e' il
+    # problema che gli alias di rete risolvono.
+    db.add(
+        ScopePath(
+            prefix="/srv/hermes/campioni",
+            label="Binari e file da analizzare, copiati dall'operatore",
+        )
+    )
+    db.add(
+        ScopePath(
+            prefix="/srv/hermes/esiti",
+            label="Dove i tool di analisi scrivono i propri risultati",
+        )
+    )
     db.flush()
 
 
@@ -684,6 +747,7 @@ def main() -> None:
             "override": db.scalar(select(func.count()).select_from(TierOverride)),
             "reti": db.scalar(select(func.count()).select_from(ScopeNetwork)),
             "alias": db.scalar(select(func.count()).select_from(ScopeAlias)),
+            "percorsi": db.scalar(select(func.count()).select_from(ScopePath)),
             "consensi": db.scalar(select(func.count()).select_from(ScopeConsent)),
             "eventi": db.scalar(select(func.count()).select_from(AuditEvent)),
             "catene": db.scalar(

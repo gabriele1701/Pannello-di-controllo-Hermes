@@ -264,6 +264,7 @@ Le concessioni di `hermes_app` sono scritte per tabella nella migrazione
 | `audit_events` | ✔ | | | |
 | `scope_networks` | ✔ | ✔ | | ✔ |
 | `scope_aliases` | ✔ | ✔ | | ✔ |
+| `scope_paths` | ✔ | ✔ | | ✔ |
 | `scope_consents` | ✔ | ✔ | solo `revoked_at` | |
 | `alembic_version` | | | | |
 
@@ -412,8 +413,84 @@ inseribili, cioè renderebbe il log incapace di registrare i rifiuti.
 
 ## Il perimetro dei bersagli
 
-Una lista di reti autorizzate e di alias dichiarati. Tre regole, tutte
-applicate nel database e tutte spiegate dall'interfaccia.
+Sono **due** perimetri, non uno: le reti con i loro alias, e i prefissi di
+percorso. E ci sono bersagli — i processi — per cui il perimetro non è una
+tabella.
+
+| `target_kind` | Bersaglio | Perimetro che si applica |
+|---|---|---|
+| `none` | nessuno | nessuno |
+| `host` | indirizzo o rete | `scope_networks` / `scope_aliases` |
+| `path` | file o directory | `scope_paths` |
+| `process` | processo in esecuzione | **il container stesso** |
+
+### Perché due tabelle e non una con una colonna «tipo»
+
+Perché ciò che il pannello può *promettere* sui due non è la stessa cosa, e
+una lista unica suggerirebbe che lo sia.
+
+Di una rete il database verifica l'**appartenenza**: il tipo `cidr` impone la
+forma canonica, e due trigger garantiscono che ogni alias cada dentro una
+rete dichiarata. È una garanzia completa, e costa zero righe di codice —
+sta nel tipo.
+
+Di un percorso il database verifica solo la **forma del prefisso**. Non c'è
+un tipo `path` in PostgreSQL, e nemmeno ci potrebbe essere nel senso utile:
+la verifica che conta richiede di guardare il filesystem, e questa
+applicazione non ha quel filesystem.
+
+### Perché il pannello non può verificare che un bersaglio sia dentro il perimetro
+
+Il prefisso `/srv/analisi` sembra una garanzia. Non lo è: basta chiedere
+`/srv/analisi/x`, dove `x` è un collegamento simbolico verso `/etc/shadow`.
+Il controllo di prefisso passa — la stringa comincia davvero per
+`/srv/analisi` — e l'apertura legge un altro file. I collegamenti simbolici
+vivono nel filesystem del container, non in questo database, e nessun `CHECK`
+li vede.
+
+Quel controllo tocca al gate di `hermes-core`, al momento dell'esecuzione:
+risolve il percorso richiesto — collegamenti simbolici, `..`, componenti
+relative — verifica che il percorso **risolto** abbia uno dei prefissi
+dichiarati come antenato, e opera sul risolto, preferibilmente su un
+descrittore di file aperto durante la risoluzione, così che controllo e uso
+si riferiscano allo stesso oggetto. Nel log finiscono **entrambi**, il
+richiesto e il risolto: se differiscono, è esattamente l'informazione che un
+audit serve a conservare.
+
+È la divisione che regge tutto il progetto — *il pannello dichiara, il gate
+applica* — e qui si vede che è una scelta e non un limite. Un controllo di
+contenimento scritto in questa applicazione sarebbe una promessa che nessuno
+può mantenere, e peggio: sembrerebbe mantenuta.
+
+### Perché per i processi il perimetro è il container e non una lista
+
+Un PID non è dichiarabile come policy. È effimero e viene riciclato, quindi
+una riga che dicesse «il PID 4312 è autorizzato» sarebbe falsa qualche
+secondo dopo essere stata scritta. Un nome di processo è aggirabile da
+chiunque controlli il processo.
+
+La risposta corretta è che **il confine di isolamento *è* il perimetro**: un
+tool che aggancia processi gira in un container effimero dove esiste solo il
+processo bersaglio, e non si dichiara quali PID siano agganciabili perché non
+ce ne sono altri.
+
+Questo è un vincolo nel database, non una convenzione:
+
+```sql
+CHECK (target_kind NOT IN ('path', 'process') OR requires_container)
+```
+
+Sta su `tools`, che è in sola lettura per questa applicazione: è chi registra
+i tool a doverlo rispettare, e non può registrare uno strumento che aggancia
+processi senza isolamento. La regola è più stretta del minimo necessario — si
+può immaginare un tool che legge un file di configurazione fidato senza
+bisogno di un container — e se quel caso si presenta la si allenta con una
+migrazione e una motivazione scritta. Partire stretti e allentare con un
+motivo è più sicuro del contrario.
+
+### Le regole delle reti
+
+Tre, tutte applicate nel database e tutte spiegate dall'interfaccia.
 
 **La forma canonica è obbligatoria.** `192.168.205.10/24` viene rifiutato:
 
@@ -442,6 +519,44 @@ dichiarata dall'operatore, non un'interrogazione. Un nome risolto al momento
 del controllo può puntare altrove al momento dell'esecuzione, può risolvere a
 più indirizzi, e dipende da un servizio che sta fuori dal perimetro che si sta
 dichiarando. L'alias *è* la risoluzione.
+
+### Le regole dei percorsi
+
+Otto vincoli di forma, ciascuno con il proprio nome nel database, e la rotta
+traduce il nome del vincolo violato in una spiegazione. Il prefisso deve
+essere assoluto, diverso da `/`, senza `..`, senza `//`, senza barra finale,
+senza backslash, senza caratteri di controllo, e lungo al massimo 256
+caratteri.
+
+I nomi separati non sono pedanteria: PostgreSQL riporta *quale* vincolo è
+stato violato e niente altro, quindi con un `CHECK` unico il messaggio
+direbbe «il prefisso non va bene» e non ci sarebbe niente da tradurre.
+
+**Il limite di 256 viene da `hermes-core`, non da qui.** Il campo `target` di
+un'invocazione e della riga di audit è dichiarato `max_length=256`, e il gate
+rifiuta qualunque bersaglio più lungo, perché un bersaglio che non entra
+nella riga di audit non è registrabile e un'esecuzione non registrabile non
+si fa. Un prefisso più lungo di 256 potrebbe contenere solo bersagli che il
+gate rifiuta sempre: sarebbe un perimetro sotto il quale niente è invocabile,
+e dichiararlo è peggio che inutile perché sembra autorizzare qualcosa.
+
+**Uno spazio iniziale o finale viene rifiutato, non rimosso.** `/srv/analisi `
+e `/srv/analisi` sono due directory distinte per il kernel e indistinguibili
+a occhio, quindi una delle due è sempre un errore di trascrizione — ma quale,
+l'applicazione non lo sa. È la stessa scelta che `hermes-core` fa sul
+bersaglio di un'invocazione: *normalizzare significa eseguire qualcosa di
+diverso da ciò che è stato chiesto*. L'etichetta invece viene ripulita: è
+testo per chi legge, non un percorso.
+
+**Nessun alias per i percorsi.** Gli alias di rete esistono perché ricordare
+un indirizzo IP è difficile; ricordare `/srv/analisi` non lo è. Un livello di
+indirezione su una stringa che l'operatore scrive comunque a mano
+aggiungerebbe solo un posto in cui sbagliare.
+
+**Nessun vincolo di non-annidamento.** `/srv` e `/srv/analisi` insieme sono
+ridondanti, non pericolosi, e vietarli impedirebbe la transizione legittima
+«aggiungo il più stretto, poi tolgo il più largo» — che è il modo corretto
+di restringere un perimetro senza lasciare un buco nel mezzo.
 
 ## I consensi
 
@@ -628,6 +743,51 @@ dati di esempio contengono il caso che lo dimostra — `osint.breach-check` è
 verde e riguarda persone fisiche — e la catena del log mostra lo stesso caso
 dal lato dell'esecuzione: un `tool_call` con tier effettivo verde, rifiutato
 perché il consenso per quello scope è scaduto.
+
+### Due perimetri, due gruppi, e un elenco che non c'è
+
+La schermata del perimetro è divisa in due gruppi con un'intestazione
+ciascuno — bersagli di rete, bersagli su filesystem — e non in una tabella
+sola con una colonna «tipo». Hanno regole e verifiche diverse: unirli
+visivamente direbbe che sono la stessa cosa.
+
+Per i processi non c'è un terzo elenco, e al suo posto c'è la ragione per cui
+non esiste, scritta in pagina con lo stesso peso degli elenchi che esistono.
+Una sezione mancante si legge come una funzione non ancora fatta; una
+spiegazione si legge come una decisione.
+
+Nella stessa pagina c'è scritto anche ciò che questa applicazione **non**
+può garantire: che un bersaglio cada davvero dentro un prefisso. Quel
+controllo richiede di risolvere i collegamenti simbolici nel filesystem del
+container, e lo fa `hermes-core` a esecuzione. Dirlo nell'interfaccia, dove
+l'operatore dichiara il prefisso, evita che la riga appena scritta sembri una
+garanzia più forte di quella che è.
+
+Un prefisso non si modifica: si rimuove e si dichiara di nuovo, così resta
+tracciato cosa era autorizzato prima. Il backend non ha `PUT` né `PATCH` su
+quella risorsa, e l'interfaccia non offre un comando che il server
+rifiuterebbe.
+
+### Il bersaglio nel catalogo, e perché l'isolamento non è un terzo badge
+
+Il genere di bersaglio compare nel catalogo come testo leggibile — «File o
+directory», «Processo in esecuzione» — e quell'etichetta arriva dal backend,
+con il resto del vocabolario del dominio. Scriverla nell'interfaccia
+significherebbe avere due traduzioni di `process` destinate a divergere.
+
+`requires_container` è un'informazione di sicurezza e si vede, ma **non** come
+terzo badge colorato: sta sotto il bersaglio, come riga minore. La riga del
+catalogo porta già due vocabolari visivi — la scala del tier e il viola dei
+dati personali — e un terzo segno competerebbe con la divergenza dei tier,
+che è ciò che quella tabella deve far notare per prima.
+
+Nel dettaglio di un tool, il bersaglio rimanda alla sezione del perimetro che
+lo riguarda: le reti per un tool `host`, i prefissi per uno `path`. Per uno
+`process` non c'è collegamento, perché non c'è una tabella da consultare — e
+al suo posto c'è la frase che lo spiega. Dove l'isolamento è imposto dal
+`CHECK` del database, il dettaglio lo dice: «il container c'è perché qualcuno
+l'ha configurato» e «il container c'è perché il database non accetta il
+contrario» sono due garanzie diverse.
 
 ### Il declassamento non esiste, nemmeno disabilitato
 

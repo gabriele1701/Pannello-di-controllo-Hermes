@@ -21,7 +21,13 @@ import ipaddress
 import uuid
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 
 from backend.models import (
     AuthorizedBy,
@@ -30,6 +36,7 @@ from backend.models import (
     OverrideSource,
     OwnerAgent,
     RiskTier,
+    MAX_PREFISSO,
     TargetKind,
 )
 
@@ -84,6 +91,10 @@ class ToolRiepilogo(BaseModel):
     personal_data: bool
     requires_container: bool
     target_kind: TargetKind
+    #: Etichetta leggibile del tipo di bersaglio. La calcola il server come
+    #: `agente_etichetta`: e' un vocabolario del dominio, e due client che lo
+    #: traducessero da se' prima o poi lo tradurrebbero diversamente.
+    bersaglio_etichetta: str
     description: str
     override_count: int
     last_override_at: dt.datetime | None
@@ -202,6 +213,61 @@ class ReteRichiesta(BaseModel):
                 f"'{v.split('/')[0]}/32' se si intende quel solo indirizzo."
             ) from None
         return str(rete)
+
+
+class PercorsoRisposta(BaseModel):
+    model_config = _USCITA
+
+    id: int
+    prefix: str
+    label: str
+
+
+class PercorsoRichiesta(BaseModel):
+    """Prefisso di percorso da dichiarare nel perimetro.
+
+    Deliberatamente senza validator di forma, al contrario di
+    `ReteRichiesta`. Le otto regole sul prefisso sono `CHECK` nel database, e
+    riscriverle qui vorrebbe dire tenerne due formulazioni: la rotta traduce
+    il nome del vincolo violato in una spiegazione, cosi' la regola resta in
+    un posto solo e vale anche per un `INSERT` fatto a mano in `psql`.
+
+    DUE DEVIAZIONI DA `_INGRESSO`, entrambe trovate da un test che falliva.
+
+    1. **Il prefisso non viene ripulito degli spazi.** `_INGRESSO` imposta
+       `str_strip_whitespace=True`, che su questo campo faceva una cosa
+       precisa e sbagliata: `/srv/analisi ` arrivava al database come
+       `/srv/analisi`, cioe' l'API rispondeva 201 autorizzando un percorso
+       **diverso** da quello digitato. Per il kernel sono due directory
+       distinte, e quale delle due fosse intesa non lo sa l'applicazione.
+
+       E' la stessa scelta di `hermes-core` sul bersaglio di un'invocazione:
+       si rifiuta invece di normalizzare, perche' «normalizzare significa
+       eseguire qualcosa di diverso da cio' che e' stato chiesto»
+       (`mcp_server/scope.py`). Lo spazio resta, il database rifiuta, e la
+       rotta spiega.
+
+       L'etichetta invece viene ripulita: e' testo per chi legge, non un
+       percorso, e uno spazio in piu' non cambia a cosa si riferisce.
+
+    2. **Il tetto di lunghezza qui e' molto piu' alto di quello vero.**
+       Con `max_length=MAX_PREFISSO`, Pydantic intercettava i prefissi troppo
+       lunghi prima del database e rispondeva «String should have at most 256
+       characters»: inglese, e muto sulla ragione. Il limite vero vale 256 e
+       vive nel `CHECK`, insieme alla sua spiegazione -- che il gate rifiuta
+       un bersaglio piu' lungo perche' non entrerebbe nella riga di audit.
+
+       Il tetto che resta qui e' solo un argine contro un corpo
+       patologico, non una regola del dominio.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Non ripulito: vedi il docstring.
+    prefix: str = Field(min_length=1, max_length=8 * MAX_PREFISSO)
+    label: Annotated[str, StringConstraints(strip_whitespace=True)] = Field(
+        min_length=1, max_length=128
+    )
 
 
 class AliasRisposta(BaseModel):

@@ -158,6 +158,49 @@ deve_fallire "declassamento (il trigger, quando ci arriva)" "$UTENTE_APP" "$PW_A
     "INSERT INTO tier_overrides (tool_id,tier,reason,created_by) SELECT id,'giallo','provo ad abbassarlo','app' FROM tools WHERE tool_id='recon.nmap-sweep'"
 
 echo
+echo "== C. il perimetro dei percorsi, e l'isolamento come vincolo =="
+# La tabella nasce con la 0004, e la 0002 non ha ALTER DEFAULT PRIVILEGES:
+# senza le due righe di GRANT in quella migrazione lo schema sarebbe valido e
+# l'applicazione rotta. Queste due controprove sono il punto in cui una
+# concessione dimenticata diventa un lavoro rosso.
+deve_riuscire "il ruolo applicativo legge i prefissi" "$UTENTE_APP" "$PW_APP" \
+    "SELECT count(*) FROM scope_paths"
+deve_riuscire "e ne scrive e rimuove uno" "$UTENTE_APP" "$PW_APP" \
+    "INSERT INTO scope_paths (prefix,label) VALUES ('/srv/verifica-sql','prova'); DELETE FROM scope_paths WHERE prefix='/srv/verifica-sql'; SELECT 'ok'"
+
+# Le regole di forma, dal ruolo PROPRIETARIO: valgono per chiunque scriva,
+# non solo per chi passa dall'API.
+deve_fallire "prefisso relativo" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "INSERT INTO scope_paths (prefix,label) VALUES ('srv/analisi','x')"
+deve_fallire "prefisso con risalita" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "INSERT INTO scope_paths (prefix,label) VALUES ('/srv/analisi/../etc','x')"
+deve_fallire "prefisso con barra finale" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "INSERT INTO scope_paths (prefix,label) VALUES ('/srv/analisi/','x')"
+deve_fallire "la radice come perimetro" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "INSERT INTO scope_paths (prefix,label) VALUES ('/','x')"
+deve_fallire "prefisso duplicato" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "INSERT INTO scope_paths (prefix,label) VALUES ('/srv/hermes/campioni','un altro nome')"
+deve_fallire "prefisso con spazio finale" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "INSERT INTO scope_paths (prefix,label) VALUES ('/srv/analisi ','x')"
+
+# L'isolamento: nemmeno il proprietario, che e' chi registra i tool, puo'
+# registrarne uno che aggancia processi senza container.
+deve_fallire "tool 'process' senza container" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "INSERT INTO tools (tool_id,agent,declared_tier,personal_data,requires_container,target_kind,exec_path,exec_sha256,description) VALUES ('prova.non-isolato','pentest_kali','rosso',false,false,'process','a.py','0000000000000000000000000000000000000000000000000000000000000000','x')"
+deve_fallire "tool 'path' senza container" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "INSERT INTO tools (tool_id,agent,declared_tier,personal_data,requires_container,target_kind,exec_path,exec_sha256,description) VALUES ('prova.non-isolato-2','pentest_kali','giallo',false,false,'path','a.py','0000000000000000000000000000000000000000000000000000000000000000','x')"
+deve_fallire "spostare un tool esistente su 'process'" "$UTENTE_PROPRIETARIO" "$PW_PROPRIETARIO" \
+    "UPDATE tools SET target_kind='process' WHERE tool_id='audit.ssl-scan'"
+
+# E il ruolo applicativo non puo' togliere il vincolo che lo esprime.
+deve_fallire "DROP del vincolo sull'isolamento" "$UTENTE_APP" "$PW_APP" \
+    "ALTER TABLE tools DROP CONSTRAINT tools_bersaglio_isolato"
+deve_fallire "DROP TABLE sui percorsi" "$UTENTE_APP" "$PW_APP" \
+    "DROP TABLE scope_paths"
+deve_fallire "UPDATE di un prefisso sul posto" "$UTENTE_APP" "$PW_APP" \
+    "UPDATE scope_paths SET label='altra'"
+
+echo
 if [ "$FALLITE" -gt 0 ]; then
     echo "$FALLITE verifiche non si sono comportate come devono" >&2
     exit 1

@@ -38,6 +38,8 @@ export type Rete = S['ReteRisposta']
 export type ReteRichiesta = S['ReteRichiesta']
 export type Alias = S['AliasRisposta']
 export type AliasRichiesta = S['AliasRichiesta']
+export type Percorso = S['PercorsoRisposta']
+export type PercorsoRichiesta = S['PercorsoRichiesta']
 
 // Consensi
 export type Consenso = S['ConsensoRisposta']

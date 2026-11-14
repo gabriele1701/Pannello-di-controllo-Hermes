@@ -561,6 +561,53 @@
         "title": "PaginaEventi",
         "type": "object"
       },
+      "PercorsoRichiesta": {
+        "additionalProperties": false,
+        "description": "Prefisso di percorso da dichiarare nel perimetro.\n\nDeliberatamente senza validator di forma, al contrario di\n`ReteRichiesta`. Le otto regole sul prefisso sono `CHECK` nel database, e\nriscriverle qui vorrebbe dire tenerne due formulazioni: la rotta traduce\nil nome del vincolo violato in una spiegazione, cosi' la regola resta in\nun posto solo e vale anche per un `INSERT` fatto a mano in `psql`.\n\nDUE DEVIAZIONI DA `_INGRESSO`, entrambe trovate da un test che falliva.\n\n1. **Il prefisso non viene ripulito degli spazi.** `_INGRESSO` imposta\n   `str_strip_whitespace=True`, che su questo campo faceva una cosa\n   precisa e sbagliata: `/srv/analisi ` arrivava al database come\n   `/srv/analisi`, cioe' l'API rispondeva 201 autorizzando un percorso\n   **diverso** da quello digitato. Per il kernel sono due directory\n   distinte, e quale delle due fosse intesa non lo sa l'applicazione.\n\n   E' la stessa scelta di `hermes-core` sul bersaglio di un'invocazione:\n   si rifiuta invece di normalizzare, perche' «normalizzare significa\n   eseguire qualcosa di diverso da cio' che e' stato chiesto»\n   (`mcp_server/scope.py`). Lo spazio resta, il database rifiuta, e la\n   rotta spiega.\n\n   L'etichetta invece viene ripulita: e' testo per chi legge, non un\n   percorso, e uno spazio in piu' non cambia a cosa si riferisce.\n\n2. **Il tetto di lunghezza qui e' molto piu' alto di quello vero.**\n   Con `max_length=MAX_PREFISSO`, Pydantic intercettava i prefissi troppo\n   lunghi prima del database e rispondeva «String should have at most 256\n   characters»: inglese, e muto sulla ragione. Il limite vero vale 256 e\n   vive nel `CHECK`, insieme alla sua spiegazione -- che il gate rifiuta\n   un bersaglio piu' lungo perche' non entrerebbe nella riga di audit.\n\n   Il tetto che resta qui e' solo un argine contro un corpo\n   patologico, non una regola del dominio.",
+        "properties": {
+          "label": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "prefix": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prefix",
+          "label"
+        ],
+        "title": "PercorsoRichiesta",
+        "type": "object"
+      },
+      "PercorsoRisposta": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "prefix",
+          "label"
+        ],
+        "title": "PercorsoRisposta",
+        "type": "object"
+      },
       "ReteRichiesta": {
         "additionalProperties": false,
         "properties": {
@@ -631,10 +678,12 @@
         "type": "object"
       },
       "TargetKind": {
-        "description": "Che bersaglio accetta un tool, e quindi se il perimetro gli si applica.",
+        "description": "Che bersaglio accetta un tool, e quindi QUALE perimetro gli si applica.\n\nNon e' una descrizione: decide quale controllo viene applicato\nall'argomento prima dell'esecuzione, e in `hermes-core` c'e' un\nvalidatore per valore con un `match` esaustivo -- un valore senza il suo\nramo fa fallire visibilmente, invece di scivolare in un ramo permissivo.\nLa regola la', che vale anche qui: **nessun kind senza validatore**.\n\n`NONE` e' il default, e il default sta sul lato restrittivo: un tool che\nnon dichiara un bersaglio non ne accetta uno.\n\n=========  ==========================  ==================================\nValore     Bersaglio                   Perimetro\n=========  ==========================  ==================================\n`none`     nessuno                     nessuno\n`host`     indirizzo o rete            `scope_networks` / `scope_aliases`\n`path`     file o directory            `scope_paths`\n`process`  processo in esecuzione      **il container stesso**\n=========  ==========================  ==================================\n\nPer `process` non esiste una tabella di scope, e non e' una lacuna: un\nPID e' effimero e viene riciclato, quindi «il PID 4312 e' autorizzato»\nsarebbe falso qualche secondo dopo essere stato scritto. Il confine di\nisolamento *e'* il perimetro, e il vincolo `tools_bersaglio_isolato`\nimpedisce di registrare un tool di questo tipo senza container.",
         "enum": [
           "none",
-          "host"
+          "host",
+          "path",
+          "process"
         ],
         "title": "TargetKind",
         "type": "string"
@@ -647,6 +696,10 @@
           },
           "agente_etichetta": {
             "title": "Agente Etichetta",
+            "type": "string"
+          },
+          "bersaglio_etichetta": {
+            "title": "Bersaglio Etichetta",
             "type": "string"
           },
           "declared_tier": {
@@ -744,6 +797,7 @@
           "personal_data",
           "requires_container",
           "target_kind",
+          "bersaglio_etichetta",
           "description",
           "override_count",
           "last_override_at",
@@ -765,6 +819,10 @@
           },
           "agente_etichetta": {
             "title": "Agente Etichetta",
+            "type": "string"
+          },
+          "bersaglio_etichetta": {
+            "title": "Bersaglio Etichetta",
             "type": "string"
           },
           "declared_tier": {
@@ -828,6 +886,7 @@
           "personal_data",
           "requires_container",
           "target_kind",
+          "bersaglio_etichetta",
           "description",
           "override_count",
           "last_override_at"
@@ -2034,6 +2093,226 @@
           }
         },
         "summary": "Rimuovi Rete",
+        "tags": [
+          "perimetro"
+        ]
+      }
+    },
+    "/api/scope/paths": {
+      "get": {
+        "operationId": "elenca_percorsi_api_scope_paths_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PercorsoRisposta"
+                  },
+                  "title": "Response Elenca Percorsi Api Scope Paths Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Elenca Percorsi",
+        "tags": [
+          "perimetro"
+        ]
+      },
+      "post": {
+        "description": "Dichiara un prefisso di percorso nel perimetro.\n\nIl valore non viene validato qui prima dell'inserimento, e non e' una\ndimenticanza: le regole di forma sono `CHECK` del database, e ripeterle in\nPython vorrebbe dire tenerne due formulazioni destinate a divergere. Si\ntenta l'inserimento, e il rifiuto del database viene tradotto in una\nspiegazione.\n\nLo stesso ragionamento degli override del tier, dove il controllo di\nmonotonia e' un trigger e non un `if`: una sola formulazione\ndell'invariante, e il criterio «rifiutato sia dall'API sia dal database»\nvero per costruzione invece che per disciplina.",
+        "operationId": "aggiungi_percorso_api_scope_paths_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PercorsoRichiesta"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PercorsoRisposta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Il prefisso e' gia' dichiarato nel perimetro."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RispostaErrore"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Il prefisso non e' in forma canonica."
+          }
+        },
+        "summary": "Aggiungi Percorso",
+        "tags": [
+          "perimetro"
+        ]
+      }
+    },
+    "/api/scope/paths/{percorso_id}": {
+      "delete": {
+        "description": "Rimuove un prefisso dal perimetro.\n\nNessun vincolo lo impedisce, al contrario della rimozione di una rete:\ntogliere un prefisso restringe il perimetro, e non lascia niente fuori\nperche' per i percorsi non esistono alias che vi puntino. E' la stessa\nasimmetria per cui un tier puo' salire e non scendere -- restringere e'\nsempre ammesso.",
+        "operationId": "rimuovi_percorso_api_scope_paths__percorso_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "percorso_id",
+            "required": true,
+            "schema": {
+              "title": "Percorso Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "hermes_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hermes Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Sessione assente, scaduta, o cookie non valido."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RispostaErrore"
+                }
+              }
+            },
+            "description": "Nessun prefisso con quell'identificativo."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rimuovi Percorso",
         "tags": [
           "perimetro"
         ]
