@@ -305,6 +305,18 @@ code,
   border-style: dashed;
 }
 
+/* Un vuoto che si spiega: il titolo dice cosa manca, il resto perche'. Il
+   testo sta su una misura leggibile anche quando il riquadro e' largo quanto
+   la tabella che sostituisce. */
+.stato--spiegato .stato__titolo {
+  color: var(--testo);
+}
+
+.stato--spiegato .stato__perche {
+  max-width: 72ch;
+  margin: 0.5rem 0 0;
+}
+
 /* --------------------------------------------------------------------- */
 /* Controlli                                                              */
 /* --------------------------------------------------------------------- */

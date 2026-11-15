@@ -86,7 +86,7 @@ echo "[entrypoint] database raggiungibile"
 echo "[entrypoint] applico le migrazioni (ruolo proprietario)..."
 alembic upgrade head
 
-echo "[entrypoint] seed, se il database e' vuoto (ruolo proprietario)..."
+echo "[entrypoint] seed: operatore iniziale; dati dimostrativi solo se HERMES_SEED_DEMO=1 (ruolo proprietario)..."
 python -m backend.seed
 
 # Da qui in poi il processo e' l'applicazione, e usa DATABASE_URL, cioe'

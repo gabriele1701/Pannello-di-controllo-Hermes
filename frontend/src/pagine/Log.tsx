@@ -22,7 +22,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { richiedi } from '../api/client'
 import type { Esito, PaginaEventi, TipoEvento } from '../api/tipi'
 import { BadgeEsito } from '../componenti/Distintivi'
-import { Caricamento, Errore, Vuoto } from '../componenti/Stati'
+import { Caricamento, Errore, Vuoto, VuotoSpiegato } from '../componenti/Stati'
 import { useRisorsa } from '../hook/useRisorsa'
 import { ROTTE } from '../percorsi'
 
@@ -215,11 +215,18 @@ export function Log() {
       {!pagina.caricamento && !pagina.problema && (
         <>
           {eventi.length === 0 ? (
-            <Vuoto>
-              {filtroAttivo
-                ? 'Nessun evento corrisponde ai filtri.'
-                : 'Il log è vuoto.'}
-            </Vuoto>
+            filtroAttivo ? (
+              <Vuoto>Nessun evento corrisponde ai filtri.</Vuoto>
+            ) : (
+              <VuotoSpiegato titolo="Il log è vuoto." dimostrativo>
+                Gli eventi arrivano dal log d&rsquo;audit di <code>hermes-core</code>, un
+                file JSONL sulla macchina del server: questa applicazione ne mostra una
+                copia e non può scriverci. In questa versione l&rsquo;ingestione di quel
+                file non è ancora collegata, quindi su un&rsquo;installazione pulita non
+                c&rsquo;è nessun evento da mostrare. Non è un guasto, e non significa che
+                non sia successo niente sul server.
+              </VuotoSpiegato>
+            )
           ) : (
             <>
               <p className="riepilogo">

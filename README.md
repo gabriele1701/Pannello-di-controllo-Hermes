@@ -26,9 +26,12 @@ schermate sono complete, la CI avvia lo stack da un clone pulito a ogni push,
 e il modello dati è quello vero di `hermes-core` valore per valore — così
 l'integrazione sarà un collegamento e non una riscrittura.
 
-Quello che è simulato è il confine fra le due metà: il log è popolato dai dati
-di esempio invece che dall'ingestione del file JSONL reale, e il flusso di
-conferma non attraversa i due lati. L'elenco preciso è in
+Quello che manca è il confine fra le due metà: l'ingestione del file JSONL
+reale, la registrazione dei tool dal server, e il flusso di conferma che
+attraversi i due lati. Finché non ci sono, **un'installazione pulita è vuota**:
+crea l'operatore e nient'altro, e ogni schermata dice perché è vuota e cosa la
+riempirà. I dati di esempio che prima arrivavano da soli ora si chiedono
+([dati dimostrativi](#dati-dimostrativi)). L'elenco preciso è in
 [fuori dal perimetro di questa consegna](#fuori-dal-perimetro-di-questa-consegna).
 
 **Il lavoro dei prossimi giorni** è finire il server MCP e adattare le due
@@ -106,8 +109,51 @@ docker compose up --build
 
 L'applicazione risponde su <http://127.0.0.1:8000> e si entra con
 `HERMES_ADMIN_USERNAME` / `HERMES_ADMIN_PASSWORD`. Il primo avvio applica le
-migrazioni e popola il database con i dati di esempio; i successivi non lo
-rifanno.
+migrazioni e crea l'operatore; i successivi non lo rifanno.
+
+**Il pannello parte vuoto, ed è voluto.** Catalogo, log, perimetro e consensi
+non hanno righe, e ogni schermata spiega perché: i tool li registra
+`hermes-core`, il log arriva dal server, perimetro e consensi li dichiara
+l'operatore. I primi due collegamenti non esistono ancora, quindi catalogo e
+log restano vuoti finché non arrivano. Non è un guasto.
+
+### Dati dimostrativi
+
+Per vedere il pannello funzionare senza un server collegato — per una
+dimostrazione, o per il controllo di chi valuta il progetto — c'è un percorso
+esplicito che scrive dieci tool, due innalzamenti di tier, un perimetro, due
+consensi e quarantacinque eventi d'audit **inventati**.
+
+Al primo avvio, impostando in `.env`:
+
+```bash
+HERMES_SEED_DEMO=1
+```
+
+Oppure dopo, su un'installazione già avviata e ancora vuota:
+
+```bash
+docker compose exec app python -m backend.seed --dimostrativo
+```
+
+Tre cose da sapere prima di usarlo:
+
+- **gira una volta sola, e solo su tabelle vuote.** Se anche una sola delle
+  tabelle che popola contiene righe — una rete dichiarata a mano, per esempio
+  — si ferma e dice quale. Non mescola dati inventati a dati esistenti;
+- **non si torna indietro senza azzerare tutto.** Innalzamenti ed eventi
+  d'audit sono append-only: non si cancellano, nemmeno dal proprietario del
+  database. L'unico modo di toglierli è `docker compose down -v`;
+- **non usarlo su un'installazione che riceverà dati veri.** In un pannello il
+  cui prodotto è la traccia, righe inventate accanto a righe vere non si
+  distinguono più. La rete del perimetro dimostrativo, in particolare, è
+  quella del laboratorio su cui il progetto è nato: su un'altra macchina è di
+  qualcun altro.
+
+Un valore di `HERMES_SEED_DEMO` che il seed non riconosce **ferma l'avvio**
+invece di valere «no»: chi scrive `on` voleva i dati, e un pannello che parte
+vuoto senza dire perché è un errore di battitura che si scopre davanti a chi
+doveva vederlo.
 
 **Senza `.env` l'avvio fallisce,** e lo fa dicendo quale variabile manca.
 Nessun segreto ha un default funzionante nel `compose`: un default che
@@ -396,7 +442,8 @@ ancora»: non devono esistere. Un pannello che potesse scrivere nel log sarebbe
 un pannello capace di riscrivere la traccia di ciò che ha autorizzato, e la
 traccia è il prodotto di tutto il sistema.
 
-Nota pratica: in questa consegna il log è popolato dai dati di esempio.
+Nota pratica: su un'installazione pulita il log è vuoto, e con i
+[dati dimostrativi](#dati-dimostrativi) contiene eventi inventati.
 L'ingestione del file JSONL reale arriva dopo, e per questo il vocabolario
 degli eventi è **quello completo di `hermes-core`** — tutti e dodici i tipi,
 `peer_correlation_id` e `authorized_by` compresi — e non un sottoinsieme
@@ -598,7 +645,7 @@ backend/
   schemas.py       contratti di ingresso e uscita, con i messaggi che spiegano
   security.py      argon2, sessione in cookie firmato
   errors.py        traduzione SQLSTATE -> HTTP
-  seed.py          dati di esempio
+  seed.py          operatore iniziale; dati dimostrativi solo su richiesta
   main.py          applicazione, montaggio della SPA
   routers/         auth, tools, consents, scope, audit
 openapi.json       il contratto fra backend e frontend: si rigenera,
@@ -619,7 +666,7 @@ scripts/           strumenti di sviluppo (esportazione del contratto,
 .github/
   workflows/ci.yml contratto, tipi, suite, build dell'immagine, avvio a freddo
   scripts/         le verifiche, eseguibili anche a mano
-tests/             186 test: vincoli in SQL diretto, privilegi dei ruoli,
+tests/             258 test: vincoli in SQL diretto, privilegi dei ruoli,
                    contratti delle API
 ```
 
@@ -900,7 +947,7 @@ Serve un PostgreSQL 16 raggiungibile.
 ```bash
 pip install -e '.[dev]'
 
-# --- ruolo proprietario: schema e dati di esempio ---
+# --- ruolo proprietario: schema e operatore iniziale ---
 # Serve solo la sua URL. Migrazioni e seed non chiedono i segreti
 # dell'applicazione, perché non ne usano nessuno.
 export MIGRATIONS_DATABASE_URL="postgresql+psycopg://hermes:...@localhost:5432/hermes_panel"
@@ -908,7 +955,8 @@ export HERMES_APP_DB_PASSWORD="una-password-di-sviluppo"  # la 0002 crea hermes_
 export HERMES_ADMIN_PASSWORD="una-password-di-sviluppo"   # il seed crea l'operatore con questa
 
 alembic upgrade head        # crea anche il ruolo hermes_app
-python -m backend.seed
+python -m backend.seed                  # solo l'operatore: il pannello parte vuoto
+python -m backend.seed --dimostrativo   # facoltativo: dati inventati per vederlo pieno
 
 # --- ruolo applicativo: il server ---
 # Da qui servono i segreti dell'applicazione, e non prima.
@@ -1009,14 +1057,17 @@ troverebbero.
    rompe il build quando il contratto cresce in modo additivo — ciò che
    compilava continua a compilare, manca solo il tipo nuovo — quindi è
    proprio il caso che passa inosservato finché qualcuno non ne ha bisogno.
-3. **`suite`** — i 186 test su un PostgreSQL 16 di servizio, con
+3. **`suite`** — i test su un PostgreSQL 16 di servizio, con
    l'applicazione che gira come `hermes_app`.
 4. **`immagine`** — `docker compose build --no-cache`, più la verifica che la
    `compose` sia YAML valido, che l'avvio *fallisca* senza i segreti, e che il
    container non giri come root.
 5. **`freddo`** — l'avvio vero dello stack da un `.env` scritto come lo
-   scriverebbe una persona seguendo questo README, poi tutte le verifiche
-   contro lo stack in piedi.
+   scriverebbe una persona seguendo questo README. Prima verifica che
+   l'installazione sia **pulita** — si entra, e ogni elenco è vuoto — poi
+   chiede i dati dimostrativi con il comando documentato qui sopra, due
+   volte, e pretende che la seconda si rifiuti; solo allora esegue tutte le
+   verifiche contro lo stack popolato.
 
 L'ultimo lavoro è quello che conta di più, perché è il criterio §11 numero uno: *il
 primo* criterio di accettazione non si verifica scrivendo codice, si verifica
@@ -1031,6 +1082,15 @@ python3 .github/scripts/verifica_stack.py   --base http://127.0.0.1:8000 --utent
 
 ```bash
 ./.github/scripts/verifica_database.sh
+```
+
+Vanno eseguiti dopo aver chiesto i [dati dimostrativi](#dati-dimostrativi):
+su un'installazione pulita il primo fallisce, com'è giusto, perché li
+pretende. Per quella c'è un terzo script, che verifica il contrario — che si
+entri e che non ci sia nient'altro:
+
+```bash
+python3 .github/scripts/verifica_pulita.py  --base http://127.0.0.1:8000 --utente operatore --password "$HERMES_ADMIN_PASSWORD"
 ```
 
 Il primo verifica via HTTP i dati di esempio, la copertura dei due assi del

@@ -1,25 +1,48 @@
-"""Popolamento iniziale del database.
+"""Popolamento iniziale del database: due percorsi, uno predefinito.
 
-Eseguito dall'entrypoint a ogni avvio, ma **attivo solo se il database e'
-vuoto**: le righe di ``tier_overrides`` e ``audit_events`` non si possono
-cancellare, quindi un seed che si rieseguisse le duplicherebbe senza modo di
-ripulire. Il criterio di «vuoto» e' l'assenza dell'operatore, che e' la prima
-riga che il seed scrive.
+Eseguito dall'entrypoint a ogni avvio.
+
+**Bootstrap, il percorso predefinito.** Crea l'operatore iniziale e
+nient'altro. E' cio' che serve per entrare, ed e' tutto cio' che
+un'installazione vera deve trovare: il catalogo dei tool lo popola
+``hermes-core``, il perimetro e i consensi li dichiara l'operatore, il log
+arriva dal server. Un'installazione pulita mostra quindi schermate vuote, e
+ciascuna dice perche' lo e' e cosa la riempira'.
+
+**Dimostrativo, il percorso esplicito.** Tool, innalzamenti, perimetro,
+consensi ed eventi d'audit inventati, per vedere il pannello funzionare senza
+un server collegato. Si chiede, non arriva da solo::
+
+    HERMES_SEED_DEMO=1 docker compose up --build      # al primo avvio
+    docker compose exec app python -m backend.seed --dimostrativo   # dopo
+
+Prima i due percorsi erano uno, e l'unico: ogni installazione nasceva con
+dodici tool che non esistevano e un log di invocazioni mai avvenute. In un
+pannello il cui prodotto e' la traccia, dati inventati che non si dichiarano
+tali sono il difetto peggiore: non si distinguono da quelli veri, e
+``tier_overrides`` e ``audit_events`` non si possono cancellare.
+
+Entrambi i percorsi sono **attivi una volta sola**, per la stessa ragione: le
+righe append-only non si ripuliscono, quindi un seed che si rieseguisse le
+duplicherebbe. Il bootstrap gira se manca l'operatore; il dimostrativo gira se
+le tabelle che popola sono tutte vuote, e altrimenti si ferma e lo dice — non
+mescola dati inventati a dati veri.
 
 Per ripartire da zero si rimuove il volume del database::
 
     docker compose down -v && docker compose up --build
 
-I dati non sono segnaposto. Servono a raccontare il dominio a chi apre
-l'applicazione per la prima volta, quindi coprono tutte le combinazioni dei
-due assi del rischio, includono due innalzamenti di tier con origini diverse,
-e contengono catene di audit che finiscono in ``denied`` e in ``pending`` —
-che sono i casi in cui si vede il gate fare il proprio lavoro. Una catena che
-finisce in ``ok`` dimostra soltanto che il sistema esegue.
+I dati dimostrativi non sono segnaposto. Servono a raccontare il dominio a chi
+apre l'applicazione per la prima volta, quindi coprono tutte le combinazioni
+dei due assi del rischio, includono due innalzamenti di tier con origini
+diverse, e contengono catene di audit che finiscono in ``denied`` e in
+``pending`` — che sono i casi in cui si vede il gate fare il proprio lavoro.
+Una catena che finisce in ``ok`` dimostra soltanto che il sistema esegue.
 
-Gli indirizzi del perimetro sono quelli del laboratorio documentato in
-hermes-core (``config/scope.example.toml``), cosi' i due repository
-raccontano la stessa macchina.
+Gli indirizzi del perimetro dimostrativo sono quelli del laboratorio su cui il
+progetto e' nato, e restano tali perche' i test li usano. Sono un esempio di
+forma, non un perimetro da copiare: su un'altra macchina quella rete e' di
+qualcun altro. E' il motivo per cui non arrivano piu' da soli.
 """
 
 from __future__ import annotations
@@ -284,7 +307,7 @@ def _crea_perimetro(db: Session) -> None:
     invece di dirlo: di una rete il database verifica l'appartenenza, di un
     percorso soltanto la forma del prefisso.
     """
-    db.add(ScopeNetwork(cidr="192.168.205.0/24", label="Laboratorio Hermes (VM su VMware)"))
+    db.add(ScopeNetwork(cidr="192.168.205.0/24", label="Rete dimostrativa (dato di esempio, non un perimetro vero)"))
     db.flush()
     # Gli alias dopo la rete: il trigger verifica il contenimento
     # all'inserimento, e con il perimetro ancora vuoto li rifiuterebbe.
@@ -712,10 +735,70 @@ def _crea_operatore(db: Session) -> None:
     print(f"[seed] operatore '{username}' creato")
 
 
-def popola(db: Session, *, con_operatore: bool = True) -> None:
-    """Scrive tutti i dati di esempio. Presuppone un database vuoto."""
-    if con_operatore:
-        _crea_operatore(db)
+#: Variabile d'ambiente che chiede il percorso dimostrativo all'avvio.
+VARIABILE_DEMO = "HERMES_SEED_DEMO"
+
+#: Opzione da riga di comando che lo chiede a mano, su un'installazione gia'
+#: avviata.
+OPZIONE_DEMO = "--dimostrativo"
+
+_SI = frozenset({"1", "true", "si", "sì", "yes"})
+_NO = frozenset({"", "0", "false", "no"})
+
+#: Le tabelle che il percorso dimostrativo popola. Devono essere TUTTE vuote
+#: perche' giri: e' cio' che gli impedisce di mescolare dati inventati a dati
+#: veri, e di duplicare righe che non si possono cancellare.
+TABELLE_DIMOSTRATIVE = (
+    ("tool", Tool),
+    ("innalzamenti", TierOverride),
+    ("reti", ScopeNetwork),
+    ("alias", ScopeAlias),
+    ("percorsi", ScopePath),
+    ("consensi", ScopeConsent),
+    ("eventi d'audit", AuditEvent),
+)
+
+
+def dimostrativo_richiesto(
+    argv: list[str] | None = None, ambiente: dict[str, str] | None = None
+) -> bool:
+    """Se e' stato chiesto il percorso dimostrativo, da opzione o da ambiente.
+
+    Un valore che non si riconosce **ferma** il seed invece di valere «no»:
+    chi scrive ``HERMES_SEED_DEMO=on`` voleva i dati, e un'installazione che
+    parte vuota senza dire perche' e' un errore di battitura che si scopre
+    davanti a chi doveva vederla.
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    ambiente = dict(os.environ) if ambiente is None else ambiente
+
+    ignote = [a for a in argv if a != OPZIONE_DEMO]
+    if ignote:
+        print(
+            f"[seed] argomento non riconosciuto: {' '.join(ignote)}. "
+            f"L'unica opzione e' {OPZIONE_DEMO}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if OPZIONE_DEMO in argv:
+        return True
+
+    valore = ambiente.get(VARIABILE_DEMO, "").strip().lower()
+    if valore in _SI:
+        return True
+    if valore in _NO:
+        return False
+    print(
+        f"[seed] {VARIABILE_DEMO}={ambiente[VARIABILE_DEMO]!r} non e' un valore "
+        f"riconosciuto. Usare 1 per i dati dimostrativi, 0 (o niente) per "
+        f"un'installazione pulita.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
+def popola_dimostrativo(db: Session) -> None:
+    """Scrive i dati dimostrativi. Presuppone vuote le tabelle che popola."""
     tool = _crea_tool(db)
     _crea_override(db, tool)
     _crea_perimetro(db)
@@ -724,37 +807,84 @@ def popola(db: Session, *, con_operatore: bool = True) -> None:
     db.commit()
 
 
+def popola(db: Session, *, con_operatore: bool = True) -> None:
+    """Operatore e dati dimostrativi insieme. Presuppone un database vuoto.
+
+    E' la somma dei due percorsi, tenuta perche' e' cio' che usano i test:
+    all'avvio non la chiama nessuno, :func:`main` decide i due passi
+    separatamente.
+    """
+    if con_operatore:
+        _crea_operatore(db)
+        db.commit()
+    popola_dimostrativo(db)
+
+
 def database_vuoto(db: Session) -> bool:
-    """Se il seed deve girare.
+    """Se il bootstrap deve girare.
 
     Il criterio e' l'assenza dell'operatore, che e' la prima riga che il seed
-    scrive: se c'e', il seed e' gia' passato.
+    scrive: se c'e', il bootstrap e' gia' passato.
     """
     return (db.scalar(select(func.count()).select_from(User)) or 0) == 0
 
 
+def tabelle_dimostrative_occupate(db: Session) -> list[str]:
+    """Le tabelle del percorso dimostrativo che contengono gia' delle righe."""
+    return [
+        f"{nome} ({quante})"
+        for nome, modello in TABELLE_DIMOSTRATIVE
+        if (quante := db.scalar(select(func.count()).select_from(modello)) or 0)
+    ]
+
+
+def esegui(db: Session, *, dimostrativo: bool) -> None:
+    """I due percorsi, nell'ordine. Separata da :func:`main` per i test."""
+    if database_vuoto(db):
+        _crea_operatore(db)
+        db.commit()
+    else:
+        print("[seed] l'operatore esiste gia': bootstrap gia' eseguito")
+
+    if not dimostrativo:
+        print(
+            "[seed] installazione pulita: nessun dato dimostrativo. Catalogo, "
+            "perimetro e log partono vuoti, e lo dicono. Per i dati di "
+            f"esempio: python -m backend.seed {OPZIONE_DEMO}"
+        )
+        return
+
+    occupate = tabelle_dimostrative_occupate(db)
+    if occupate:
+        print(
+            f"[seed] dati dimostrativi NON scritti: il database contiene gia' "
+            f"{', '.join(occupate)}. Non si mescolano dati inventati a dati "
+            f"esistenti, e innalzamenti ed eventi d'audit non si possono "
+            f"cancellare. Per ripartire: docker compose down -v"
+        )
+        return
+
+    popola_dimostrativo(db)
+    conteggi = {
+        nome: db.scalar(select(func.count()).select_from(modello))
+        for nome, modello in TABELLE_DIMOSTRATIVE
+    }
+    conteggi["catene"] = db.scalar(
+        select(func.count(func.distinct(AuditEvent.correlation_id)))
+    )
+    print(
+        "[seed] DATI DIMOSTRATIVI scritti, inventati:",
+        ", ".join(f"{k}={v}" for k, v in conteggi.items()),
+    )
+
+
 def main() -> None:
+    dimostrativo = dimostrativo_richiesto()
     # Sessione PRIVILEGIATA: il seed scrive su `tools`, `users` e
     # `audit_events`, che per il ruolo applicativo sono in sola lettura.
     db = privileged_session_factory()()
     try:
-        if not database_vuoto(db):
-            print("[seed] il database contiene gia' dei dati: niente da fare")
-            return
-        popola(db)
-        conteggi = {
-            "tool": db.scalar(select(func.count()).select_from(Tool)),
-            "override": db.scalar(select(func.count()).select_from(TierOverride)),
-            "reti": db.scalar(select(func.count()).select_from(ScopeNetwork)),
-            "alias": db.scalar(select(func.count()).select_from(ScopeAlias)),
-            "percorsi": db.scalar(select(func.count()).select_from(ScopePath)),
-            "consensi": db.scalar(select(func.count()).select_from(ScopeConsent)),
-            "eventi": db.scalar(select(func.count()).select_from(AuditEvent)),
-            "catene": db.scalar(
-                select(func.count(func.distinct(AuditEvent.correlation_id)))
-            ),
-        }
-        print("[seed] popolato:", ", ".join(f"{k}={v}" for k, v in conteggi.items()))
+        esegui(db, dimostrativo=dimostrativo)
     finally:
         db.close()
 
