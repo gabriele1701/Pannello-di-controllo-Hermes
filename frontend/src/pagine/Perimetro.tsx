@@ -450,9 +450,11 @@ function SezionePercorsi({
         {risorsa.dati && <span className="sezione__conteggio">{risorsa.dati.length}</span>}
       </h3>
       <p className="sezione__nota">
-        Prefissi assoluti in forma canonica. Un prefisso autorizza quella directory e
-        tutto ciò che contiene, quindi dichiararne uno troppo largo è il modo di
-        rinunciare al perimetro scrivendolo come se fosse una policy.
+        Prefissi assoluti in forma canonica, fatti di sole lettere, cifre, punto,
+        trattino e trattino basso: <code>hermes-core</code> li scrive in una direttiva
+        di montaggio, dove uno spazio separerebbe due percorsi. Un prefisso autorizza
+        quella directory e tutto ciò che contiene, quindi dichiararne uno troppo largo
+        è il modo di rinunciare al perimetro scrivendolo come se fosse una policy.
       </p>
 
       {risorsa.caricamento && <Caricamento cosa="dei percorsi" />}

@@ -529,6 +529,15 @@ def _percorso(db: Session, prefisso: str, etichetta: str = "etichetta di prova")
             "/srv/ana\x7flisi", "scope_paths_prefix_stampabile", id="del"
         ),
         pytest.param("/" + "a" * 299, "scope_paths_prefix_lunghezza", id="troppo-lungo"),
+        # --- 0005: cio' che hermes-core non puo' scrivere in un montaggio --- #
+        pytest.param("/srv/./analisi", "scope_paths_prefix_senza_punto", id="segmento-punto"),
+        pytest.param("/srv/analisi/.", "scope_paths_prefix_senza_punto", id="punto-finale"),
+        pytest.param(
+            "/srv/dati condivisi", "scope_paths_prefix_trascrivibile", id="spazio-interno"
+        ),
+        pytest.param("/srv/a:b", "scope_paths_prefix_trascrivibile", id="due-punti"),
+        pytest.param("/srv/campioni*", "scope_paths_prefix_trascrivibile", id="asterisco"),
+        pytest.param("/srv/più-dati", "scope_paths_prefix_trascrivibile", id="non-ascii"),
     ],
 )
 def test_prefisso_non_canonico_rifiutato(
@@ -546,17 +555,25 @@ def test_prefisso_non_canonico_rifiutato(
     [
         pytest.param("/x", id="il-piu-corto"),
         pytest.param("/srv/hermes/analisi-2026", id="normale"),
-        pytest.param("/srv/dati condivisi", id="con-spazio-interno"),
+        pytest.param("/srv/dati_condivisi.v2", id="punto-e-trattino-basso"),
+        pytest.param("/srv/.nascosta", id="nome-che-inizia-per-punto"),
         pytest.param("/" + "b" * 255, id="al-limite-di-lunghezza"),
     ],
 )
 def test_prefisso_canonico_accettato(db: Session, prefisso: str) -> None:
     """La controprova: le regole non rifiutano cio' che devono ammettere.
 
-    `/srv/dati condivisi` e' il caso che conta: uno spazio INTERNO e' parte
-    di un nome di directory legittimo, e vietarlo sarebbe una regola sul
-    filesystem di qualcun altro. Solo gli spazi esterni sono un errore di
-    trascrizione.
+    Fino alla 0004 qui c'era `/srv/dati condivisi`, come «il caso che conta»:
+    uno spazio interno e' parte di un nome di directory legittimo, e vietarlo
+    sarebbe stata una regola sul filesystem di qualcun altro. Era vero finche'
+    il prefisso restava una stringa da confrontare. Ora `hermes-core` lo
+    scrive in una direttiva di montaggio, dove lo spazio separa due percorsi:
+    quel prefisso farebbe rifiutare al server l'intero perimetro. Il caso non
+    e' stato tolto, e' passato dall'altra parte — sta fra i rifiutati qui
+    sopra, con il vincolo che lo spiega.
+
+    `/srv/.nascosta` resta ammesso, ed e' la controprova del vincolo sul
+    segmento `.`: un punto *dentro* un nome non e' un segmento.
     """
     assert _percorso(db, prefisso) > 0
     db.rollback()

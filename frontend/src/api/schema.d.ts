@@ -681,7 +681,7 @@ export interface components {
          * @description Prefisso di percorso da dichiarare nel perimetro.
          *
          *     Deliberatamente senza validator di forma, al contrario di
-         *     `ReteRichiesta`. Le otto regole sul prefisso sono `CHECK` nel database, e
+         *     `ReteRichiesta`. Le regole di forma sul prefisso sono `CHECK` nel database, e
          *     riscriverle qui vorrebbe dire tenerne due formulazioni: la rotta traduce
          *     il nome del vincolo violato in una spiegazione, cosi' la regola resta in
          *     un posto solo e vale anche per un `INSERT` fatto a mano in `psql`.
