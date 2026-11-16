@@ -852,6 +852,10 @@ quella che dice.
 
 ## Sicurezza dell'applicazione
 
+> Per **segnalare una vulnerabilità** c'è [`SECURITY.md`](SECURITY.md): il
+> canale, cosa includere, e in quanto tempo arriva una risposta. Questa
+> sezione descrive invece da cosa l'applicazione si difende.
+
 - **Password con argon2id** (`argon2-cffi`, parametri predefiniti della
   libreria, che sono quelli raccomandati). Argon2 richiede memoria e non solo
   cicli, quindi resiste alla parallelizzazione su GPU: è la proprietà che lo
