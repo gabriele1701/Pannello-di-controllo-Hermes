@@ -29,7 +29,7 @@ import type { Problema } from '../api/errori'
 import { erroriDi } from '../api/errori'
 import type { Alias, Consenso, Rete, StatoConsenso, ToolRiepilogo } from '../api/tipi'
 import { BadgeStato } from '../componenti/Distintivi'
-import { Caricamento, Errore, Vuoto } from '../componenti/Stati'
+import { Caricamento, Errore, Vuoto, VuotoSpiegato } from '../componenti/Stati'
 import { useRisorsa } from '../hook/useRisorsa'
 
 const STATI: StatoConsenso[] = ['attivo', 'scaduto', 'revocato']
@@ -151,11 +151,18 @@ export function Consensi() {
         {!consensi.caricamento &&
           !consensi.problema &&
           (righe.length === 0 ? (
-            <Vuoto>
-              {agente || stato
-                ? 'Nessun consenso corrisponde ai filtri.'
-                : 'Nessun consenso registrato.'}
-            </Vuoto>
+            agente || stato ? (
+              <Vuoto>Nessun consenso corrisponde ai filtri.</Vuoto>
+            ) : (
+              <VuotoSpiegato titolo="Nessun consenso registrato." dimostrativo>
+                I consensi li concede l&rsquo;operatore, dal modulo qui sotto: nessuno
+                arriva da solo. Un consenso riguarda un agente, e gli agenti che si possono
+                scegliere sono quelli che hanno almeno un tool nel catalogo
+                {agenti.length === 0
+                  ? ': il catalogo è vuoto, quindi per ora non c’è nessuno a cui concederne uno.'
+                  : '.'}
+              </VuotoSpiegato>
+            )
           ) : (
             <table className="tabella">
               <thead>
@@ -391,6 +398,12 @@ function ModuloConsenso({
       <p className="sezione__nota">
         Senza indicare un tool, il consenso vale per l&rsquo;agente intero.
       </p>
+      {agenti.length === 0 && (
+        <p className="sezione__nota">
+          L&rsquo;elenco degli agenti è vuoto perché il catalogo dei tool lo è: un
+          agente compare qui quando <code>hermes-core</code> registra un suo tool.
+        </p>
+      )}
 
       <form className="modulo-inline" onSubmit={(e) => void crea(e)}>
         <label className="campo campo--inline">
@@ -443,7 +456,7 @@ function ModuloConsenso({
             name="scope"
             required
             list="ambiti-perimetro"
-            placeholder="192.168.205.0/24"
+            placeholder="192.0.2.0/24"
             value={scope}
             onChange={(e) => setScope(e.target.value)}
             aria-invalid={erroriDi(problema, 'scope').length > 0}

@@ -84,6 +84,14 @@ services:
       # --- Operatore iniziale -------------------------------------------- #
       HERMES_ADMIN_USERNAME: "${HERMES_ADMIN_USERNAME:-operatore}"
       HERMES_ADMIN_PASSWORD: "${HERMES_ADMIN_PASSWORD:?manca in .env, senza non esiste nessun operatore con cui entrare}"
+
+      # --- Dati dimostrativi --------------------------------------------- #
+      # Predefinito 0: un'installazione pulita crea l'operatore e nient'altro.
+      # Con 1 il primo avvio scrive anche tool, perimetro, consensi e log
+      # INVENTATI, per vedere il pannello senza un server collegato. Qui un
+      # default che funziona e' voluto, al contrario dei segreti: il valore
+      # sicuro e' quello che non fa niente.
+      HERMES_SEED_DEMO: "${HERMES_SEED_DEMO:-0}"
     ports:
       # Su 127.0.0.1 e non su 0.0.0.0: il pannello decide cosa gli agenti LLM
       # possono fare, e non deve essere raggiungibile dalla rete.

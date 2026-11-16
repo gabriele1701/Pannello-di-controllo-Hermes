@@ -34,7 +34,7 @@ import { ErroreApi, richiedi } from '../api/client'
 import type { Problema } from '../api/errori'
 import { erroriDi } from '../api/errori'
 import type { Alias, Percorso, Rete } from '../api/tipi'
-import { Caricamento, Errore, Vuoto } from '../componenti/Stati'
+import { Caricamento, Errore, VuotoSpiegato } from '../componenti/Stati'
 import { useRisorsa } from '../hook/useRisorsa'
 
 export function Perimetro() {
@@ -201,10 +201,12 @@ function SezioneReti({
 
       {risorsa.dati &&
         (risorsa.dati.length === 0 ? (
-          <Vuoto>
-            Nessuna rete dichiarata. Finché il perimetro è vuoto, nessun alias può
-            essere dichiarato.
-          </Vuoto>
+          <VuotoSpiegato titolo="Nessuna rete dichiarata." dimostrativo>
+            Il perimetro lo dichiara l&rsquo;operatore, dal modulo qui sotto: non arriva
+            dal server e non ha un valore predefinito, perché una rete predefinita
+            sarebbe la rete di qualcun altro. Finché è vuoto nessun tool con un bersaglio
+            di rete ha dove agire, e nessun alias può essere dichiarato.
+          </VuotoSpiegato>
         ) : (
           <table className="tabella">
             <thead>
@@ -240,7 +242,7 @@ function SezioneReti({
             className="campo__ingresso mono"
             name="cidr"
             required
-            placeholder="192.168.205.0/24"
+            placeholder="192.0.2.0/24"
             value={cidr}
             onChange={(e) => setCidr(e.target.value)}
             aria-invalid={erroriDi(problema, 'cidr').length > 0}
@@ -323,7 +325,11 @@ function SezioneAlias({
 
       {risorsa.dati &&
         (risorsa.dati.length === 0 ? (
-          <Vuoto>Nessun alias dichiarato.</Vuoto>
+          <VuotoSpiegato titolo="Nessun alias dichiarato.">
+            Sono facoltativi. Un alias è un nome che l&rsquo;operatore dà a un indirizzo
+            dentro una delle reti dichiarate sopra: si aggiunge dal modulo qui sotto,
+            dopo aver dichiarato almeno una rete.
+          </VuotoSpiegato>
         ) : (
           <table className="tabella">
             <thead>
@@ -376,7 +382,7 @@ function SezioneAlias({
             className="campo__ingresso mono"
             name="address"
             required
-            placeholder="192.168.205.20"
+            placeholder="192.0.2.20"
             value={indirizzo}
             onChange={(e) => setIndirizzo(e.target.value)}
             aria-invalid={erroriDi(problema, 'address').length > 0}
@@ -454,10 +460,10 @@ function SezionePercorsi({
 
       {risorsa.dati &&
         (risorsa.dati.length === 0 ? (
-          <Vuoto>
-            Nessun percorso dichiarato. I tool che leggono file o directory non hanno
-            dove agire finché questo elenco è vuoto.
-          </Vuoto>
+          <VuotoSpiegato titolo="Nessun percorso dichiarato.">
+            I prefissi li dichiara l&rsquo;operatore, dal modulo qui sotto. I tool che
+            leggono file o directory non hanno dove agire finché questo elenco è vuoto.
+          </VuotoSpiegato>
         ) : (
           <table className="tabella">
             <thead>

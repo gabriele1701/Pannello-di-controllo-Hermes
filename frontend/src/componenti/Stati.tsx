@@ -67,3 +67,40 @@ export function Errore({
 export function Vuoto({ children }: { children: ReactNode }) {
   return <p className="stato stato--vuoto">{children}</p>
 }
+
+/** Un elenco vuoto che spiega perche' lo e' e cosa lo riempira'.
+ *
+ * Un'installazione pulita nasce con il solo operatore: catalogo, log,
+ * perimetro e consensi sono vuoti, e una tabella bianca senza spiegazione
+ * sembra un guasto. Tre righe, sempre nello stesso ordine: cosa manca,
+ * perche', e da dove arrivera'.
+ *
+ * Sta qui, accanto a `Vuoto`, perche' i due non vanno confusi: `Vuoto` e' per
+ * «i filtri non trovano niente», dove non c'e' niente da spiegare; questo e'
+ * per «qui non c'e' ancora mai stato niente».
+ */
+export function VuotoSpiegato({
+  titolo,
+  children,
+  dimostrativo = false,
+}: {
+  titolo: string
+  children: ReactNode
+  /** Se i dati di questa schermata arrivano anche dal percorso dimostrativo. */
+  dimostrativo?: boolean
+}) {
+  return (
+    <div className="stato stato--vuoto stato--spiegato">
+      <p className="stato__titolo">{titolo}</p>
+      <p className="stato__perche">{children}</p>
+      {dimostrativo && (
+        <p className="stato__perche">
+          Per vedere il pannello con dati di esempio, su un database ancora vuoto:{' '}
+          <code>docker compose exec app python -m backend.seed --dimostrativo</code>. Sono
+          dati inventati, e innalzamenti ed eventi d&rsquo;audit non si possono poi
+          cancellare: non su un&rsquo;installazione che riceverà dati veri.
+        </p>
+      )}
+    </div>
+  )
+}

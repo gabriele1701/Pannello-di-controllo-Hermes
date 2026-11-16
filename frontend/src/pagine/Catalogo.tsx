@@ -24,7 +24,7 @@ import { richiedi } from '../api/client'
 import type { Tier, ToolRiepilogo } from '../api/tipi'
 import { TIER_CRESCENTI } from '../api/tipi'
 import { BadgeDatiPersonali, CellaTier, Fascia } from '../componenti/Distintivi'
-import { Caricamento, Errore, Vuoto } from '../componenti/Stati'
+import { Caricamento, Errore, Vuoto, VuotoSpiegato } from '../componenti/Stati'
 import { useRisorsa } from '../hook/useRisorsa'
 import { ROTTE } from '../percorsi'
 
@@ -100,7 +100,11 @@ export function Catalogo() {
       {!caricamento && !problema && (
         <>
           <p className="riepilogo">
-            {tool.length} tool registrati da <code>hermes-core</code>.{' '}
+            {tool.length} tool registrati da <code>hermes-core</code>.
+            {/* Il punto finale appartiene alla seconda frase: con il catalogo
+                vuoto non ce n'è una, e restava un «. .» in testa alla
+                schermata che un'installazione pulita mostra per prima. */}
+            {(innalzati > 0 || conDatiPersonali > 0) && ' '}
             {innalzati > 0 && (
               <>
                 <strong>{innalzati}</strong> con il tier innalzato oltre quello dichiarato
@@ -112,7 +116,7 @@ export function Catalogo() {
                 <strong>{conDatiPersonali}</strong> che riguardano persone fisiche
               </>
             )}
-            .
+            {(innalzati > 0 || conDatiPersonali > 0) && '.'}
           </p>
 
           <form className="filtri" onSubmit={(e) => e.preventDefault()} role="search">
@@ -189,9 +193,13 @@ export function Catalogo() {
           </form>
 
           {tool.length === 0 && (
-            <Vuoto>
-              Nessun tool registrato. Il catalogo lo popola <code>hermes-core</code> all’avvio: questa applicazione lo mostra, non lo crea.
-            </Vuoto>
+            <VuotoSpiegato titolo="Nessun tool registrato." dimostrativo>
+              I tool compaiono qui quando <code>hermes-core</code> li registra: questa
+              applicazione li mostra, non li crea, e la tabella è in sola lettura anche
+              per lei. In questa versione il collegamento con il server non è ancora
+              attivo, quindi su un&rsquo;installazione pulita il catalogo resta vuoto.
+              Non è un guasto.
+            </VuotoSpiegato>
           )}
 
           {tool.length > 0 && visibili.length === 0 && (
