@@ -301,3 +301,76 @@ def test_il_compose_non_chiede_il_dimostrativo_per_conto_suo():
         riga for riga in esempio.splitlines() if riga.startswith(f"{VARIABILE_DEMO}=")
     ]
     assert assegnazioni == [f"{VARIABILE_DEMO}=0"]
+
+
+# --------------------------------------------------------------------------- #
+# La migrazione 0005 e le righe che ci sono gia'
+# --------------------------------------------------------------------------- #
+
+
+def _alembic(url: str, *argomenti: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["alembic", *argomenti],
+        capture_output=True,
+        text=True,
+        cwd=RADICE,
+        env={
+            **os.environ,
+            "MIGRATIONS_DATABASE_URL": url,
+            "HERMES_APP_DB_PASSWORD": PASSWORD_RUOLO_APP,
+        },
+        check=False,
+    )
+
+
+def test_la_0005_si_ferma_su_un_prefisso_non_montabile_e_dice_quale(
+    banca: BancaPulita,
+):
+    """Una migrazione non cancella una riga di policy per conto dell'operatore.
+
+    Sta in questo file perche' ha bisogno della stessa cosa dei test del
+    seed: un database suo, da portare avanti e indietro fra due revisioni.
+
+    Si torna alla 0004, si dichiara un prefisso che allora era lecito, e si
+    risale. `ADD CONSTRAINT` da solo fallirebbe nominando il vincolo e non la
+    riga; qui deve fallire nominando il prefisso, e lasciare la tabella
+    com'era -- compresa la riga buona accanto.
+    """
+    assert _alembic(banca.url, "downgrade", "0004_perimetro_percorsi").returncode == 0
+    with banca.motore.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO scope_paths (prefix, label) VALUES "
+                "('/srv/dati condivisi', 'lecito fino alla 0004'), "
+                "('/srv/buono', 'resta')"
+            )
+        )
+
+    esito = _alembic(banca.url, "upgrade", "head")
+    assert esito.returncode != 0
+    assert "'/srv/dati condivisi'" in esito.stderr
+    assert "/srv/buono" not in esito.stderr
+    assert "Non vengono cancellati in automatico" in esito.stderr
+    assert banca.righe("scope_paths") == 2
+
+    # Tolto dall'operatore, la migrazione passa e il vincolo c'e'.
+    with banca.motore.begin() as conn:
+        conn.execute(text("DELETE FROM scope_paths WHERE prefix = '/srv/dati condivisi'"))
+    assert _alembic(banca.url, "upgrade", "head").returncode == 0
+    with pytest.raises(Exception, match="scope_paths_prefix_trascrivibile"):
+        with banca.motore.begin() as conn:
+            conn.execute(
+                text("INSERT INTO scope_paths (prefix, label) VALUES ('/srv/a b', 'x')")
+            )
+    assert banca.righe("scope_paths") == 1
+
+
+def test_i_prefissi_dimostrativi_sono_montabili(banca: BancaPulita):
+    """I dati di esempio devono rispettare le regole che mostrano."""
+    assert banca.seed(OPZIONE_DEMO).returncode == 0
+    with banca.motore.connect() as conn:
+        prefissi = list(conn.execute(text("SELECT prefix FROM scope_paths")).scalars())
+    assert prefissi
+    import re
+
+    assert all(re.fullmatch(r"(/[A-Za-z0-9._-]+)+", p) for p in prefissi), prefissi

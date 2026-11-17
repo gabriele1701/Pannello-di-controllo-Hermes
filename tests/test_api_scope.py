@@ -266,6 +266,17 @@ def test_elenco_ordinato_per_prefisso(autenticato) -> None:
         pytest.param(
             "/" + "a" * 299, ("256", "riga di audit"), id="troppo-lungo"
         ),
+        pytest.param(
+            "/srv/./analisi", ("segmento '.'", "forma non canonica"), id="segmento-punto"
+        ),
+        pytest.param(
+            "/srv/dati condivisi",
+            ("solo lettere", "direttiva di montaggio", "/srv/dati-condivisi"),
+            id="spazio-interno",
+        ),
+        pytest.param(
+            "/srv/a:b", ("solo lettere", "tutto il resto del perimetro"), id="due-punti"
+        ),
     ],
 )
 def test_prefisso_non_canonico_rifiutato_con_spiegazione(

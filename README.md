@@ -569,11 +569,22 @@ dichiarando. L'alias *è* la risoluzione.
 
 ### Le regole dei percorsi
 
-Otto vincoli di forma, ciascuno con il proprio nome nel database, e la rotta
+Dieci vincoli di forma, ciascuno con il proprio nome nel database, e la rotta
 traduce il nome del vincolo violato in una spiegazione. Il prefisso deve
-essere assoluto, diverso da `/`, senza `..`, senza `//`, senza barra finale,
-senza backslash, senza caratteri di controllo, e lungo al massimo 256
-caratteri.
+essere assoluto, diverso da `/`, senza `..`, senza segmenti `.`, senza `//`,
+senza barra finale, senza backslash, senza caratteri di controllo, lungo al
+massimo 256 caratteri, e fatto di soli alfanumerici, `.`, `_`, `-` e `/`.
+
+**L'ultimo viene da `hermes-core`, come il limite di lunghezza.** Il wrapper
+dei tool scrive ogni prefisso in una direttiva di montaggio di systemd, dove
+lo spazio separa due percorsi e i due punti separano sorgente e destinazione.
+Il server rifiuta un prefisso con altri caratteri **insieme a tutto il resto
+del perimetro**, perché il file è uno solo. Fino alla migrazione 0005 il
+pannello accettava `/srv/dati condivisi`, con la ragione che uno spazio
+interno è un nome di directory legittimo: resta vero per il filesystem, ma
+una policy che il pannello accetta e il server non può applicare è una
+policy dichiarata e non in vigore. La direzione conta: una regola più stretta
+qui è innocua, una più larga no.
 
 I nomi separati non sono pedanteria: PostgreSQL riporta *quale* vincolo è
 stato violato e niente altro, quindi con un `CHECK` unico il messaggio
@@ -666,7 +677,7 @@ scripts/           strumenti di sviluppo (esportazione del contratto,
 .github/
   workflows/ci.yml contratto, tipi, suite, build dell'immagine, avvio a freddo
   scripts/         le verifiche, eseguibili anche a mano
-tests/             258 test: vincoli in SQL diretto, privilegi dei ruoli,
+tests/             270 test: vincoli in SQL diretto, privilegi dei ruoli,
                    contratti delle API
 ```
 

@@ -245,7 +245,7 @@ def rimuovi_alias(
 #: stato rifiutato e cosa scrivere invece.
 #:
 #: I vincoli hanno un nome parlante proprio per questo: con un unico `CHECK`
-#: che sommasse le sette regole, il messaggio direbbe «il prefisso non va
+#: che sommasse tutte le regole, il messaggio direbbe «il prefisso non va
 #: bene» e la traduzione sarebbe impossibile.
 _SPIEGAZIONI: dict[str, tuple[str, str]] = {
     "scope_paths_prefix_assoluto": (
@@ -295,6 +295,21 @@ _SPIEGAZIONI: dict[str, tuple[str, str]] = {
         "Il prefisso contiene caratteri di controllo.",
         "Un percorso con caratteri non stampabili non e' trascrivibile in un "
         "file di policy ne' leggibile in una riga di log.",
+    ),
+    "scope_paths_prefix_senza_punto": (
+        "Il prefisso non puo' contenere un segmento '.'.",
+        "'/srv/./analisi' e '/srv/analisi' sono lo stesso percorso e due "
+        "righe diverse, e hermes-core rifiuta la prima come forma non "
+        "canonica. Scrivere il percorso senza il segmento '.'.",
+    ),
+    "scope_paths_prefix_trascrivibile": (
+        "Il prefisso puo' contenere solo lettere, cifre, '.', '_', '-' e '/'.",
+        "hermes-core scrive ogni prefisso in una direttiva di montaggio, "
+        "dove lo spazio separa due percorsi e i due punti separano sorgente "
+        "e destinazione: un prefisso con altri caratteri verrebbe rifiutato "
+        "dal server insieme a tutto il resto del perimetro. Rinominare la "
+        "directory, o dichiararne una che la contiene: '/srv/dati-condivisi' "
+        "invece di '/srv/dati condivisi'.",
     ),
     "scope_paths_prefix_lunghezza": (
         f"Il prefisso non puo' superare {MAX_PREFISSO} caratteri.",
