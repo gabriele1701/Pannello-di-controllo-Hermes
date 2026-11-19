@@ -16,13 +16,15 @@ Le versioni qui devono coincidere con quelle del `Dockerfile` e con
 `assess/runner.py` (`PIN_TOOL`): sono la stessa affermazione in tre punti, e i
 metadati di ogni report le dichiarano.
 
-## Testi completi delle licenze
+## Note per strumento
 
-Il testo integrale di ciascuna licenza si recupera dal rispettivo upstream alla
-versione pinnata e si deposita qui accanto a questo NOTICE (un file per
-strumento) al momento del lock delle versioni, prima della consegna. Non sono
-incollati ora per non versionare un testo di licenza non verificato contro la
-release reale.
+Accanto a questo NOTICE c'e' un file per strumento con licenza (SPDX),
+copyright, versione e upstream: `nuclei.md`, `sqlmap.md`, `semgrep.md`,
+`pip-audit.md`. Le quattro licenze sono documenti SPDX canonici e stabili: i
+file ne riportano l'identificativo SPDX e il link al testo integrale, piu' la
+riga di copyright del progetto; `nuclei.md` include il testo MIT per intero
+(e' corto e standard). Al lock finale delle versioni basta confermare che i
+tag upstream combacino con le versioni pinnate.
 
 ## Nota di compatibilita'
 

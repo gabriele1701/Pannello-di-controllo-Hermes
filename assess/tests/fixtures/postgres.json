@@ -1,0 +1,20 @@
+{
+  "roles": [
+    {"rolname": "hermes_app", "rolsuper": false, "rolcreatedb": false, "rolcreaterole": false, "rolbypassrls": false},
+    {"rolname": "hermes_assess", "rolsuper": false, "rolcreatedb": false, "rolcreaterole": false, "rolbypassrls": false}
+  ],
+  "table_grants": [
+    {"grantee": "hermes_app", "table_name": "audit_events", "privilege_type": "SELECT"},
+    {"grantee": "hermes_app", "table_name": "scope_networks", "privilege_type": "SELECT"},
+    {"grantee": "hermes_app", "table_name": "scope_networks", "privilege_type": "INSERT"},
+    {"grantee": "hermes_assess", "table_name": "audit_events", "privilege_type": "SELECT"},
+    {"grantee": "hermes_assess", "table_name": "tools", "privilege_type": "SELECT"}
+  ],
+  "column_grants": [
+    {"grantee": "hermes_app", "table_name": "scope_consents", "column_name": "revoked_at", "privilege_type": "UPDATE"}
+  ],
+  "settings": [
+    {"name": "session_replication_role", "setting": "origin"},
+    {"name": "log_statement", "setting": "none"}
+  ]
+}

@@ -1,0 +1,4 @@
+### endpoint: POST /api/scope/networks
+[00:00:01] [INFO] testing connection to the target URL
+[00:00:02] [WARNING] the web server responded with an HTTP error code (401) which could interfere with the results of the tests
+[00:00:02] [WARNING] got a 302 redirect to 'http://app:8000/login' - the session cookie appears to be invalid

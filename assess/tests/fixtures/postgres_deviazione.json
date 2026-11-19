@@ -1,0 +1,17 @@
+{
+  "roles": [
+    {"rolname": "hermes_app", "rolsuper": false},
+    {"rolname": "hermes_assess", "rolsuper": false}
+  ],
+  "table_grants": [
+    {"grantee": "hermes_app", "table_name": "audit_events", "privilege_type": "SELECT"},
+    {"grantee": "hermes_app", "table_name": "audit_events", "privilege_type": "INSERT"},
+    {"grantee": "hermes_app", "table_name": "scope_consents", "privilege_type": "UPDATE"},
+    {"grantee": "hermes_assess", "table_name": "tools", "privilege_type": "SELECT"},
+    {"grantee": "hermes_assess", "table_name": "scope_paths", "privilege_type": "DELETE"}
+  ],
+  "column_grants": [],
+  "settings": [
+    {"name": "session_replication_role", "setting": "replica"}
+  ]
+}

@@ -1,0 +1,6 @@
+### endpoint: POST /api/scope/networks
+[00:00:01] [INFO] testing connection to the target URL
+[00:00:02] [INFO] testing if POST parameter 'cidr' is dynamic
+[00:00:03] [WARNING] POST parameter 'cidr' does not appear to be dynamic
+[00:00:04] [INFO] testing for SQL injection on POST parameter 'cidr'
+[00:00:09] [WARNING] all tested parameters do not appear to be injectable

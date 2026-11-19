@@ -1,0 +1,1 @@
+{"results":[{"check_id":"python.sqlalchemy.security.sqlalchemy-execute-raw-query","path":"backend/routers/scope.py","start":{"line":118},"extra":{"message":"Query grezza con input concatenato","severity":"WARNING","metadata":{"cwe":["CWE-89"],"owasp":["A03:2021"]}}}],"errors":[],"paths":{"scanned":["backend/"]}}

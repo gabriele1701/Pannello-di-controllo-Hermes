@@ -1,0 +1,54 @@
+#!/usr/sbin/nft -f
+#
+# Regole di egress dello scanner VSPT — SCRITTE, DA APPLICARE SULLA VM.
+#
+# Perche' non basta `internal: true`
+# ----------------------------------
+# Una rete docker `internal: true` non ha gateway verso l'esterno: nessuna
+# uscita e' possibile, il che e' ottimo per confinare `app` e `db` — ma chiude
+# anche l'unica eccezione che serve, l'SSH verso l'host della VM (`host:22`).
+# Da una rete internal-only quel pacchetto non ha una via, e il collector
+# `system` non partirebbe mai.
+#
+# La messa in opera reale e' quindi: lo scanner su una rete CON gateway, e
+# queste regole nft che restringono l'egress alle SOLE tre destinazioni —
+# `app`, `db`, `host:22`. La garanzia non e' piu' "niente gateway", e' "gateway
+# sorvegliato": default drop, piu' tre permessi espliciti. L'egress self-check
+# del tool resta la tripwire che verifica che queste regole siano in vigore.
+#
+# Vanno applicate dove vede il traffico dello scanner: sull'host della VM
+# (filtrando per l'IP del container scanner) o, con CAP_NET_ADMIN, dentro il
+# container stesso. Applicare con:  nft -f assess/net/nftables-assess.nft
+#
+# I valori <...> sono DA_COMPILARE con quelli della VM (venerdi').
+
+define SCANNER_IP   = <IP_DEL_CONTAINER_SCANNER>   # es. 172.30.0.5
+define APP_IP       = <IP_DI_app>                  # es. 172.30.0.2
+define DB_IP        = <IP_DI_db>                    # es. 172.30.0.3
+define HOST_VM_IP   = <IP_HOST_VM_GATEWAY>          # host.docker.internal
+
+table inet assess_egress {
+    chain output {
+        # Default DROP: tutto cio' che non e' esplicitamente permesso cade.
+        type filter hook output priority 0; policy drop;
+
+        # Connessioni gia' aperte e traffico di loopback.
+        ct state established,related accept
+        oifname "lo" accept
+
+        # DNS verso il resolver interno di docker, per risolvere i nomi di
+        # servizio app/db (il resolver sta su 127.0.0.11 nel container).
+        ip daddr 127.0.0.11 udp dport 53 accept
+        ip daddr 127.0.0.11 tcp dport 53 accept
+
+        # (1) verso l'app, solo HTTP applicativo
+        ip daddr $APP_IP tcp dport 8000 accept
+        # (2) verso il db, solo PostgreSQL
+        ip daddr $DB_IP tcp dport 5432 accept
+        # (3) verso l'host della VM, solo SSH
+        ip daddr $HOST_VM_IP tcp dport 22 accept
+
+        # Tutto il resto e' gia' negato dalla policy. Nessuna uscita verso
+        # Internet: e' qui che vive l'enforcement, non in un if di Python.
+    }
+}
