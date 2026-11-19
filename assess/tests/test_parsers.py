@@ -103,20 +103,20 @@ def test_sqlmap_un_comando_per_endpoint_iniettabile():
 
 
 def test_sqlmap_parse_iniezione():
-    raw = SqlmapCollector().parse(_testo("sqlmap_iniezione.log"))
+    raw = SqlmapCollector().parse(_testo("sqlmap_iniezione.txt"))
     assert raw.esito is EsitoCheck.COMPLETATO
     assert raw.elementi and raw.elementi[0]["injectable"] is True
     assert raw.elementi[0]["parameter"] == "cidr"
 
 
 def test_sqlmap_parse_pulito_e_zero():
-    raw = SqlmapCollector().parse(_testo("sqlmap_pulito.log"))
+    raw = SqlmapCollector().parse(_testo("sqlmap_pulito.txt"))
     assert raw.esito is EsitoCheck.COMPLETATO and raw.elementi == []
     assert "controllo positivo" in raw.nota
 
 
 def test_sqlmap_sessione_scaduta_e_fallito_non_negativo():
-    raw = SqlmapCollector().parse(_testo("sqlmap_sessione.log"))
+    raw = SqlmapCollector().parse(_testo("sqlmap_sessione.txt"))
     assert raw.esito is EsitoCheck.FALLITO
     assert "sessione non valida" in raw.nota
 
@@ -257,7 +257,7 @@ def test_esegui_live_e_l_unico_stub(collector):
 
 
 def test_sqlmap_iniezione_normalizza_in_finding_critico():
-    raw = SqlmapCollector().parse(_testo("sqlmap_iniezione.log"))
+    raw = SqlmapCollector().parse(_testo("sqlmap_iniezione.txt"))
     findings = normalizza([raw])
     assert len(findings) == 1
     assert findings[0].severity == "critical" and findings[0].source is Source.SQLMAP
