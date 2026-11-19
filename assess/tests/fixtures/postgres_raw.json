@@ -1,0 +1,8 @@
+[
+  {"controllo": "hermes_app senza INSERT su audit_events", "tabella": "audit_events",
+   "atteso": "SELECT", "osservato": "SELECT", "conforme": true,
+   "references": ["backend/migrations 0002"]},
+  {"controllo": "hermes_app UPDATE solo su scope_consents.revoked_at",
+   "tabella": "scope_consents", "atteso": "UPDATE(revoked_at)",
+   "osservato": "UPDATE(revoked_at)", "conforme": true}
+]

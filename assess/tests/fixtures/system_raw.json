@@ -1,0 +1,8 @@
+[
+  {"controllo": "permessi di .env", "bersaglio": "/app/.env",
+   "atteso": "600", "osservato": "600", "conforme": true},
+  {"controllo": "porta db esposta oltre la rete interna", "bersaglio": "0.0.0.0:5432",
+   "atteso": "solo rete interna", "osservato": "0.0.0.0:5432", "conforme": false,
+   "impact": 4, "probability": 3,
+   "recommendation": "Vincolare il publish di 5432 a 127.0.0.1 o alla rete interna."}
+]

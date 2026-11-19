@@ -1,0 +1,16 @@
+[
+  {
+    "template-id": "http-missing-security-headers",
+    "info": {"name": "Intestazioni di sicurezza mancanti", "severity": "info",
+             "classification": {"cwe-id": ["CWE-693"]}},
+    "matched-at": "http://app:8000/api/salute",
+    "type": "http"
+  },
+  {
+    "template-id": "cookie-without-httponly",
+    "info": {"name": "Cookie senza flag HttpOnly", "severity": "low",
+             "classification": {"cwe-id": ["CWE-1004"]}},
+    "matched-at": "http://app:8000/api/auth/login",
+    "type": "http"
+  }
+]
