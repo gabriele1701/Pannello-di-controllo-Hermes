@@ -1,0 +1,309 @@
+#!/usr/bin/python3
+
+import json
+import os
+import platform
+import socket
+import sys
+import subprocess
+from pathlib import Path
+
+PROTOCOL_VERSION = 1
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_DENIED = 126
+
+ALLOWED_COMMANDS = {
+    "system.info": "SYS-01",
+    "system.listeners": "SYS-02",
+    "system.processes": "SYS-03",
+}
+
+
+def emit(check_id, status, data=None, error=None):
+    """Produce the standard JSON protocol envelope."""
+    payload = {
+        "protocol_version": PROTOCOL_VERSION,
+        "check_id": check_id,
+        "status": status,
+        "data": data,
+        "error": error,
+    }
+
+    sys.stdout.write(
+        json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n"
+    )
+    sys.stdout.flush()
+
+
+def read_os_release():
+    """Read selected fields without sourcing or executing the file."""
+    result = {}
+
+    try:
+        lines = Path("/etc/os-release").read_text(
+            encoding="utf-8"
+        ).splitlines()
+
+        for line in lines:
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+
+            if key in {"ID", "VERSION_ID", "PRETTY_NAME"}:
+                result[key] = value.strip().strip('"').strip("'")
+
+    except (OSError, UnicodeError):
+        raise RuntimeError("OS_RELEASE_UNAVAILABLE")
+
+    return result
+
+
+def system_info():
+    try:
+        os_release = read_os_release()
+
+        data = {
+            "hostname": socket.gethostname(),
+            "os": os_release.get("ID"),
+            "os_version": os_release.get("VERSION_ID"),
+            "os_pretty_name": os_release.get("PRETTY_NAME"),
+            "kernel": platform.release(),
+            "architecture": platform.machine(),
+            "python_version": platform.python_version(),
+        }
+
+        emit("SYS-01", "ok", data=data)
+        return EXIT_OK
+
+    except (RuntimeError, OSError):
+        emit(
+            "SYS-01",
+            "error",
+            error={"code": "SYSTEM_INFO_UNAVAILABLE"},
+        )
+        return EXIT_ERROR
+
+
+
+def system_listeners():
+    """Collect TCP listening sockets without elevated privileges."""
+
+    try:
+        result = subprocess.run(
+            ["/usr/bin/ss", "-H", "-ltnp"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            shell=False,
+        )
+
+        if result.returncode != 0:
+            emit(
+                "SYS-02",
+                "error",
+                error={"code": "LISTENER_COMMAND_FAILED"},
+            )
+            return EXIT_ERROR
+
+        listeners = []
+
+        for line in result.stdout.splitlines():
+            fields = line.split()
+
+            # Expected ss columns:
+            # State Recv-Q Send-Q Local-Address:Port Peer-Address:Port
+            if len(fields) < 5 or fields[0] != "LISTEN":
+                continue
+
+            local_endpoint = fields[3]
+
+            # IPv4: 0.0.0.0:22
+            # IPv6: [::]:22
+            if local_endpoint.startswith("["):
+                closing_bracket = local_endpoint.rfind("]")
+                if closing_bracket == -1:
+                    continue
+
+                address = local_endpoint[1:closing_bracket]
+                port_text = local_endpoint[closing_bracket + 2:]
+
+            else:
+                address, separator, port_text = local_endpoint.rpartition(":")
+
+                if not separator:
+                    continue
+
+            # Remove optional interface scope, e.g. %lo
+            address = address.split("%", 1)[0]
+
+            try:
+                port = int(port_text)
+            except ValueError:
+                continue
+
+            listeners.append({
+                "protocol": "tcp",
+                "state": "LISTEN",
+                "address": address,
+                "port": port,
+                "process": None,
+            })
+
+        data = {
+            "listeners": listeners,
+            "count": len(listeners),
+            "process_visibility": "limited",
+            "limitations": [
+                "Process ownership may be unavailable to the assess user."
+            ],
+        }
+
+        emit("SYS-02", "ok", data=data)
+        return EXIT_OK
+
+    except subprocess.TimeoutExpired:
+        emit(
+            "SYS-02",
+            "error",
+            error={"code": "LISTENER_COMMAND_TIMEOUT"},
+        )
+        return EXIT_ERROR
+
+    except OSError:
+        emit(
+            "SYS-02",
+            "error",
+            error={"code": "LISTENER_COMMAND_UNAVAILABLE"},
+        )
+        return EXIT_ERROR
+
+
+
+
+def system_processes():
+    """Collect process metadata without elevated privileges."""
+    check_id = "SYS-03"
+
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/ps",
+                "-eo",
+                "pid,ppid,user,stat,comm",
+                "--no-headers",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            shell=False,
+        )
+
+        if result.returncode != 0:
+            emit(
+                check_id,
+                "error",
+                error={"code": "PROCESS_COMMAND_FAILED"},
+            )
+            return EXIT_ERROR
+
+        processes = []
+
+        for line in result.stdout.splitlines():
+            fields = line.split(None, 4)
+
+            if len(fields) != 5:
+                continue
+
+            try:
+                pid = int(fields[0])
+                ppid = int(fields[1])
+            except ValueError:
+                continue
+
+            processes.append({
+                "pid": pid,
+                "ppid": ppid,
+                "user": fields[2],
+                "state": fields[3],
+                "command": fields[4],
+            })
+
+        data = {
+            "processes": processes,
+            "count": len(processes),
+            "visibility": "system_wide",
+            "limitations": [
+                "Process arguments and environment variables are not collected.",
+                "Process visibility depends on host permissions and procfs configuration.",
+            ],
+        }
+
+        emit(check_id, "ok", data=data)
+        return EXIT_OK
+
+    except subprocess.TimeoutExpired:
+        emit(
+            check_id,
+            "error",
+            error={"code": "PROCESS_COMMAND_TIMEOUT"},
+        )
+        return EXIT_ERROR
+
+    except OSError:
+        emit(
+            check_id,
+            "error",
+            error={"code": "PROCESS_COMMAND_UNAVAILABLE"},
+        )
+        return EXIT_ERROR
+
+
+
+
+def main():
+    # OpenSSH sets this variable to the original client command.
+    # Never parse it as shell input.
+    original_command = os.environ.get("SSH_ORIGINAL_COMMAND", "")
+
+    check_id = ALLOWED_COMMANDS.get(original_command)
+
+    if check_id is None:
+        emit(
+            "UNKNOWN",
+            "error",
+            error={"code": "COMMAND_NOT_ALLOWED"},
+        )
+        return EXIT_DENIED
+
+    if original_command == "system.info":
+        return system_info()
+
+    if original_command == "system.listeners":
+        return system_listeners()
+
+    if original_command == "system.processes":
+        return system_processes()
+
+    emit(
+        "UNKNOWN",
+        "error",
+        error={"code": "COMMAND_NOT_IMPLEMENTED"},
+    )
+    return EXIT_DENIED
+
+
+    # Defensive fallback: unknown commands must never execute.
+    emit(
+        "UNKNOWN",
+        "error",
+        error={"code": "COMMAND_NOT_IMPLEMENTED"},
+    )
+    return EXIT_DENIED
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
