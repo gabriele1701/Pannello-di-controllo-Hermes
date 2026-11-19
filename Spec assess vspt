@@ -1,0 +1,235 @@
+# Spec-contratto — `assess/` · tool VSPT & Risk Assessment del Pannello
+
+**Aggiornato:** 18 novembre 2026 (rev. 2 — rilievi consulente recepiti) · **Repo:** `gabriele1701/Pannello-di-controllo-Hermes` · **Consegna:** ven 20/11 23:59
+**Stato:** approvata (Gabriele + consulente). Scaffold indipendente dal target: giovedì.
+
+Questo è il **contratto condiviso** fra la chat main (planning) e l'agente esecutore. Definisce cosa si costruisce, come, e i criteri per dire «fatto». Non è hermes-core: è un assessor **della webapp** del pannello, standalone, riproducibile da `git clone`.
+
+> Distinzione tenuta ferma: `hermes-core/bin/hermes-assess` verifica le difese del *server MCP*. Questo tool (`assess/`, comando `vspt`) valuta la *web application* del pannello. Cugini, non lo stesso strumento.
+
+---
+
+## 1. Obiettivo e requisiti della traccia
+
+Tool CLI integrato nella repo del pannello, che valuta la sicurezza della webapp **e** dell'ambiente che la ospita, e produce un report unico. Deve soddisfare, verificabile punto per punto:
+
+- analisi esterna della webapp + vulnerability scanning;
+- penetration test documentati (controlli, esiti, evidenze);
+- analisi interna **autenticata** della macchina (statica del sorgente, config e permessi DB, processi/servizi, opz. config web server/dipendenze/log);
+- **≥ 2 fonti** informative;
+- report unico con finding normalizzati e **rischio = impatto × probabilità**;
+- riproducibile dopo `git clone` seguendo il README.
+
+## 2. Vincolo non negoziabile
+
+Il VSPT opera **esclusivamente** sulla webapp e sull'ambiente autorizzati. Non interagisce con target esterni, non esce dal perimetro. La limitazione **non dipende solo da un check Python**: è imposta al confine (rete) e un controllo positivo fail-closed la verifica (§5).
+
+## 3. Topologia (Opzione B)
+
+```
+PC di casa
+┌───────────────────────── VM Linux dedicata ─────────────────────────┐
+│                                                                      │
+│  compose del pannello            container scanner (vspt)            │
+│  ┌───────────┐  ┌────────┐       ┌──────────────────────────┐        │
+│  │ app :8000 │  │ db:5432│◀──────│ rete interna (no egress) │        │
+│  └─────┬─────┘  └────┬───┘   SQL │  HTTP → app:8000          │        │
+│        │             │   ro      │  SQL  → db:5432 (ro)      │        │
+│        └─────────────┴───────────┴──────────┬───────────────┘        │
+│                                   SSH (chiave, ForceCommand)         │
+└──────────────────────────────────────────────┼──────────────────────┘
+                                                ▼  host VM
+```
+
+Punti fermi:
+
+- **Binding — verificato, due cose distinte (rilievo recepito).** Il processo dentro il container app ascolta su `0.0.0.0:8000` (`CMD uvicorn --host 0.0.0.0`), quindi i fratelli lo raggiungono via `app:8000`. L'esposizione all'host è ristretta **separatamente** dalla porta pubblicata `127.0.0.1:8000:8000` del `compose.yaml`. Le due cose coesistono: raggiungibile sulla rete docker, **non** dalla LAN. **Il binding del pannello NON si tocca.**
+- Lo scanner raggiunge l'app **per nome di servizio** (`app:8000`), non via porta pubblicata. "Esterno" = metodo black-box (HTTP, nessun accesso al sorgente, login come un utente), non distanza di rete.
+- **`localhost` dentro il container ≠ host VM ≠ container app.** Indirizzamento sempre esplicito: `app`, `db`, `host.docker.internal` (host VM via gateway).
+- **Istanza bersaglio sacrificabile**, con dati dimostrativi (`HERMES_SEED_DEMO=1`).
+- **Fallback C** (se il setup VM/SSH sfora): target = compose locale, SSH all'host locale, stesso codice, stessa spec. Solo la config cambia.
+
+## 4. Canali autenticati (minimo privilegio)
+
+Tre destinazioni ammesse, nient'altro:
+
+| Canale | Credenziale | Privilegio | Uso |
+|---|---|---|---|
+| HTTP `app:8000` | cookie di sessione (login operatore demo) | utente operatore | scan esterno + PT |
+| SQL `db:5432` | ruolo **`hermes_assess`** | **SELECT-only** | introspezione ruoli/grant/config |
+| SSH host VM `:22` | chiave, utente **`assess`** | **ristretto lato server** (vedi sotto) | processi/servizi/porte/sorgente |
+
+- **`hermes_assess`**: nuovo ruolo, migrazione `0006`, `SELECT` sulle tabelle + lettura `pg_catalog`/`information_schema`. Non riuso `hermes_app` (non è read-only).
+- **SSH — la restrizione sta sul server, non nel wrapper Python (rilievo recepito).** Un wrapper client-side (`wrappers/ssh.py`) decide solo *cosa il nostro tool invia*: non impedisce a chi possiede la chiave di aprire una shell o lanciare comandi arbitrari. Il minimo privilegio reale richiede il **confine lato server**:
+  - **account `assess` non privilegiato**: nessun `sudo`, nessun gruppo extra, accesso in sola lettura solo a ciò che serve (sorgente, output di comandi diagnostici);
+  - **`restrict`** nella riga di `authorized_keys` (niente port/agent/X11-forwarding, niente pty, niente user-rc);
+  - **`ForceCommand`** → uno **script validatore sul server** che legge `$SSH_ORIGINAL_COMMAND`, lo confronta con un'**allowlist di comandi read-only** ed esegue solo i consentiti, altrimenti rifiuta. L'allowlist vive sul server, applicata da `sshd` — è il pattern di `hermes-core` (HC-04 / `hermes-tool-run`).
+  - **Non è roadmap:** `restrict` + account non privilegiato vanno già nel setup di stasera; il `ForceCommand` validatore entra venerdì con il ruolo DB. Il wrapper client-side resta solo l'interfaccia del tool, non un controllo di sicurezza.
+- **Segreti mai in CLI, log o report.** Password target da env (`ASSESS_TARGET_PASSWORD`), DSN da env (`ASSESS_DB_DSN`), chiave SSH montata come secret. Il report redige qualunque valore sensibile.
+
+## 5. Scope guard — enforcement alla rete, tripwire nel codice
+
+Il confinamento è a **due livelli**, e il livello che conta è la rete:
+
+- **Enforcement (autorevole): regola di rete.** Lo scanner sta su una rete docker **`internal: true`** che raggiunge solo `app` e `db`; l'accesso a `host:22` è l'unica eccezione, concessa esplicitamente. Ogni altra uscita è bloccata al confine, non da un `if`. È qui che vive la garanzia.
+- **Tripwire (difesa in profondità): egress self-check fail-closed.** Prima di ogni scansione il tool tenta connessioni verso più indirizzi/porte sentinella esterni (es. `1.1.1.1:53`, `8.8.8.8:443`). Se *anche uno solo* risponde → **rifiuta di partire**, uscita non-zero. **Non dimostra** che ogni uscita sia chiusa: cattura una rete mal configurata e fallisce in sicurezza. L'enforcement resta la regola di rete; il self-check verifica che sia davvero in vigore.
+- **Validazione target.** `base_url` deve risolvere a un host in allowlist (`app`); IP pubblici o nomi esterni → rifiuto. **Nessuna risoluzione DNS esterna** del target.
+- **Pin del target.** Ogni tool riceve solo il target validato.
+
+**Non distruttivo — regola dura.** Il tool **non esegue mai** comandi che modificano dati o distruggono stato: niente `docker compose down -v`, niente scritture sul DB, profilo sqlmap senza tecniche che alterano dati. Il DB è raggiunto in sola lettura. `down -v` **cancella i volumi**: è una procedura **manuale dell'operatore**, documentata, da usare **solo** sull'istanza demo sacrificabile per resettarla — mai un passo automatico del tool, mai su un ambiente con dati da conservare.
+
+## 6. Layout `assess/`
+
+```
+assess/
+  __main__.py            entrypoint (python -m assess), console_script `vspt`
+  cli.py                 parsing, output sequenziale, orchestrazione run
+  config.py              carica scope.toml (fail-closed, DA_COMPILARE rifiutato)
+  scope.py               egress self-check + validazione target (fail-closed)
+  runner.py              esegue i collector (indipendenti), raccoglie metadati run
+  model.py               Finding + enum (Status, PentestResult) + mapping Severity
+  risk.py                impatto×probabilità → risk_score → severity
+  normalize.py           output grezzo → Finding[], dedup/correlazione
+  report/
+    json_report.py       JSON canonico
+    html_report.py       HTML dai soli dati JSON (nessuna logica di valutazione)
+    templates/           template HTML autoconsistente (nessun asset remoto)
+  collectors/
+    base.py              interfaccia Collector
+    external_nuclei.py   nuclei, template offline versionati, JSON
+    external_sqlmap.py   sqlmap, endpoint da openapi.json, profilo non distruttivo
+    internal_semgrep.py  statica su backend/ (sorgente via SSH)
+    internal_pipaudit.py pip-audit su requirements.lock
+    internal_db.py       ruoli/grant/config via hermes_assess (SELECT-only)
+    internal_system.py   SSH: processi, servizi, porte, permessi
+  inventory/
+    openapi_endpoints.py openapi.json → inventario endpoint/parametri
+  wrappers/
+    ssh.py               interfaccia SSH del tool (NON il controllo di sicurezza)
+  ssh/
+    hermes-assess-ssh    (venerdì) validatore ForceCommand lato server + allowlist
+  templates_nuclei/      sottoinsieme di template, versionati localmente
+  tests/                 scope, model/risk, normalize, report (fixtures)
+  Dockerfile             installa i tool da upstream (versioni pinnate)
+  compose.assess.yaml    servizio scanner su rete internal:true
+  scope.example.toml     config con placeholder DA_COMPILARE
+  LICENSES/              note di licenza dei tool di terze parti
+  README-assess.md       uso (confluisce nel README principale alla fine)
+migrations/versions/
+  0006_ruolo_assess.py   ruolo hermes_assess SELECT-only
+```
+
+### Interfaccia Collector
+
+```python
+class Collector(Protocol):
+    name: str
+    scope: Literal["external", "internal"]
+    requires: set[Literal["target", "ssh", "db"]]
+    def run(self, ctx: RunContext) -> RawResult: ...
+```
+
+- `RunContext` porta: config validata, sessione HTTP autenticata (cookie), wrapper SSH, connessione DB read-only.
+- Ogni collector è **indipendente**: il fallimento di uno è registrato come *check fallito* nei metadati e **non** aborta gli altri.
+- `normalize.py` converte ogni `RawResult` in `list[Finding]`.
+
+## 7. Schema del finding (JSON canonico)
+
+```json
+{
+  "id": "VSPT-0001",
+  "title": "…",
+  "affected_element": "POST /api/scope/networks (campo: cidr)",
+  "category": "injection|auth|config|dependency|crypto|info-exposure|…",
+  "source": "sqlmap|nuclei|semgrep|pip-audit|postgres|system",
+  "evidence": "…",
+  "status": "confirmed|potential|unverified|false_positive",
+  "pentest_result": "positive|negative|not_applicable|not_run",
+  "impact": 3,
+  "probability": 2,
+  "risk_score": 6,
+  "severity": "<enum del repo>",
+  "verification_confidence": "high|medium|low",
+  "scope": "external|internal",
+  "recommendation": "…",
+  "references": ["CWE-89", "backend/routers/scope.py"]
+}
+```
+
+**Metadati run**: timestamp, versione tool, commit del pannello bersaglio, versioni dei tool usati, elenco check {completati, saltati, falliti}, limitazioni note, hash della config di scope.
+
+**Invariante di onestà (controllo positivo):** un check non eseguito o fallito **non è mai** presentato come superato. `pentest_result: negative` significa *non rilevato nei test svolti*, non assenza assoluta. Il report mostra i check saltati/falliti e i limiti **in evidenza**, non in nota.
+
+**Severity:** derivata dal `risk_score`, mappata sull'enum `Severity` **esistente** nel repo (verificare `backend/models.py` / contratti hermes-core prima di fissare le bande; non introdurne uno nuovo). Mapping provvisorio confermato da Gabriele, da allineare all'enum reale: 1–4 low · 5–9 medium · 10–15 high · 16–25 critical.
+
+## 8. Controlli MVP
+
+**Esterno (black-box, HTTP autenticato):**
+
+- **nuclei** — template **offline** versionati in `templates_nuclei/`, nessun auto-update durante lo scan; cookie di sessione iniettato; endpoint da `openapi.json` + base URL; output JSON.
+- **sqlmap** — SQLi mirata sugli endpoint/parametri ricavati da `openapi.json`; autenticato (cookie); **profilo non distruttivo** (`--batch`, livello/rischio bassi, tecniche limitate, nessuna azione OS/dati). Una sessione scaduta → esito **esplicito**, mai falso negativo. Esito atteso onesto: nessuna SQLi (query parametrizzate SQLAlchemy) → `negative` con nota di controllo positivo. Profilo esatto calibrato venerdì sugli endpoint reali.
+
+> Nota: il pannello **non ha token CSRF**; la difesa è il cookie `SameSite=Lax`. La gestione auth è solo: login → cattura cookie → replay.
+
+**Interno (SSH + DB read-only):**
+
+- **semgrep** — ruleset OWASP/python **bundled** (offline), su `backend/` prelevato via SSH.
+- **pip-audit** — su `requirements.lock`.
+- **postgres** — via `hermes_assess`: ruoli, grant per tabella, config rilevanti; confronto col modello a due ruoli documentato.
+- **system** — via SSH ristretto: porte in ascolto (`ss -tlnp`), processi, servizi, stato docker, permessi su percorsi sensibili.
+
+**Offline:** nuclei templates e DB di pip-audit si aggiornano in uno step **separato, esplicito, non necessario** all'esecuzione confinata. Il run confinato usa ciò che è già locale.
+
+**Rinviato (roadmap):** katana, ffuf, arjun, trivy, analisi log approfondita, integrazione dashboard, test autenticati avanzati/copertura ruoli, export oltre JSON/HTML, aggiornamento automatico CVE/template.
+
+## 9. CLI e output
+
+`vspt run --config scope.toml` → sequenziale, `comando → cosa fa → esito → successivo`:
+
+```
+[1/6] nuclei   — scan a template offline sugli endpoint autorizzati … ok (3 finding)
+[2/6] sqlmap   — SQLi mirata su 7 endpoint da openapi.json         … negative (0 SQLi — difesa tiene)
+[3/6] semgrep  — statica su backend/                                … ok (2 finding)
+[4/6] pip-audit— CVE note sulle dipendenze                          … ok (0)
+[5/6] postgres — ruoli e grant (SELECT-only)                        … ok (1 attestazione)
+[6/6] system   — porte, processi, permessi (SSH)                    … ok
+→ report: assess/out/report.json, assess/out/report.html
+```
+
+Sottocomandi MVP: `run`, `report` (rigenera HTML dal JSON). `update-feeds` documentato, separato.
+
+## 10. Distribuzione e licenze
+
+- **Si spedisce il `Dockerfile`, non un'immagine pre-costruita.** Il build installa nuclei/sqlmap/semgrep/pip-audit **da upstream**, versioni pinnate. L'utente costruisce; nessun codice di terze parti nel repo.
+- `LICENSES/` con le note di ciascun tool + un NOTICE che elenca versioni e licenze. Il codice di `assess/` resta sotto la licenza del repo.
+- Licenze da fissare al lock (confidenza): sqlmap GPLv2 · ffuf/nuclei/katana MIT · arjun **da confermare**.
+
+## 11. Criteri di accettazione
+
+- si avvia seguendo il README (riproducibile da clone);
+- esegue **≥ 1 controllo esterno** e **≥ 2 fonti interne**;
+- resta confinato: rete `internal:true` + egress self-check verde (esterno irraggiungibile);
+- produce **JSON valido** + HTML coerente generato dallo stesso JSON;
+- ogni finding ha evidenze, stato, esito PT quando applicabile, rischio calcolato;
+- distingue nettamente esito negativo, check non eseguito, errore;
+- non espone segreti (CLI/log/report) e non esegue comandi distruttivi;
+- include test automatici: scope validation (egress bloccato), normalizzazione, calcolo rischio, validità schema JSON, rendering HTML.
+
+## 12. Milestone (3 giorni)
+
+- **Stasera (casa, 60–90 min, time-boxed):** VM Linux avviata; utente SSH `assess` **non privilegiato**, chiave, riga `authorized_keys` con `restrict`; connettività verificata dall'host. *Non* il ruolo DB né il `ForceCommand` (venerdì). Oltre il time-box → fallback C.
+- **Giovedì (ITS, no VM):** revisione spec; scaffold `assess/` indipendente dal target — `model`, `risk`, `scope`, `normalize`, `report`, CLI skeleton, interfaccia Collector, parser `openapi_endpoints`, test su fixture; bozza Dockerfile; migrazione `0006` scritta (non applicata). Commit/push.
+- **Venerdì (casa, VM pronta):** applica `0006`, crea `hermes_assess`; installa il `ForceCommand` validatore per `assess`; su `compose.assess.yaml` (rete `internal:true`); collega i 6 collector al target live; e2e contro l'istanza demo; report dimostrativo; README finale. Verifica dei criteri di accettazione.
+
+## 13. Punti chiusi
+
+1. Comando **`vspt`** (per non collidere con `hermes-core/bin/hermes-assess`). ✅
+2. Mapping `risk_score → Severity` provvisorio accettato, da allineare all'enum reale del repo. ✅
+3. Profilo sqlmap calibrato venerdì sugli endpoint reali. ✅
+
+## 14. Rilievi del consulente recepiti (18/11, rev. 2)
+
+- **Binding** — verificato: processo su `0.0.0.0:8000` dentro il container, publish host `127.0.0.1:8000`. Due cose distinte, già corrette. Nessuna modifica (§3).
+- **Egress** — riformulato: l'enforcement è la regola di rete `internal:true`; il self-check è una tripwire fail-closed che non dimostra la chiusura totale (§5).
+- **SSH** — la restrizione va **lato server** (`restrict` + `ForceCommand` validatore), non in un wrapper client-side; `restrict` + account non privilegiato già stasera, `ForceCommand` venerdì. Non è roadmap (§4).
+- **`docker compose down -v`** — cancella i volumi: procedura manuale, solo sull'istanza demo; mai un passo del tool, mai su dati da conservare (§5).
