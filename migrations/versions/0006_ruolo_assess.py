@@ -157,11 +157,43 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Rimuove le concessioni e il ruolo.
+    """Rimuove le concessioni e, se non serve piu' a nessun altro database,
+    elimina il ruolo.
 
-    Nessun ``REASSIGN``/``DROP OWNED``: il ruolo non possiede niente, che e' il
-    punto per cui esiste."""
-    op.execute(f"REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {RUOLO_ASSESS}")
-    op.execute(f"REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {RUOLO_ASSESS}")
-    op.execute(f"REVOKE ALL ON SCHEMA public FROM {RUOLO_ASSESS}")
-    op.execute(f"DROP ROLE IF EXISTS {RUOLO_ASSESS}")
+    ``hermes_assess`` e' un ruolo a livello di **cluster**: lo stesso ruolo e'
+    condiviso da ogni database su cui questa migrazione e' stata applicata —
+    quello dell'applicazione e, nei test, i database usa-e-getta che fanno
+    upgrade/downgrade per conto loro. Un downgrade gira pero' su UN database
+    per volta, e ``DROP ROLE`` e' globale: fallisce con
+    ``dependent_objects_still_exist`` (SQLSTATE 2BP01) se il ruolo e' ancora
+    referenziato dai grant di un ALTRO database del cluster. E' esattamente il
+    caso che faceva fallire la suite: il database di un test faceva il
+    downgrade mentre il database principale teneva ancora i suoi grant.
+
+    Un ``REVOKE`` mirato non basta, perche' agisce solo sul database corrente e
+    lascia il ruolo con dipendenze altrove. Quindi: ``DROP OWNED BY`` toglie
+    tutti i privilegi del ruolo in QUESTO database (non possiede oggetti: e'
+    SELECT-only), poi si tenta il ``DROP ROLE`` e lo si lascia cadere in
+    silenzio se un altro database lo usa ancora. L'ultimo database a fare il
+    downgrade droppa davvero il ruolo; in produzione, dove il database e' uno
+    solo, viene rimosso subito.
+    """
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{RUOLO_ASSESS}') THEN
+                -- Revoca tutti i privilegi del ruolo in QUESTO database (e, se
+                -- ne possedesse, i suoi oggetti: qui non ne possiede).
+                EXECUTE 'DROP OWNED BY {RUOLO_ASSESS}';
+                -- Droppa il ruolo globale solo se nessun altro database lo usa.
+                BEGIN
+                    DROP ROLE {RUOLO_ASSESS};
+                EXCEPTION WHEN dependent_objects_still_exist THEN
+                    RAISE NOTICE '{RUOLO_ASSESS}: ancora usato in un altro database, privilegi locali revocati e ruolo mantenuto';
+                END;
+            END IF;
+        END
+        $$
+        """
+    )
