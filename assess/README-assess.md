@@ -11,25 +11,34 @@ Questo documento confluirà nel README principale alla consegna.
 
 ---
 
-## Stato: scaffold indipendente dal target
+## Stato
 
-C'è, e gira senza VM né rete:
+Implementato e testato **senza VM né target**:
 
 - **modello** (`model.py`) e **rischio** (`risk.py`) — il finding canonico e il
   calcolo I×P;
 - **scope guard** (`scope.py`) — egress self-check fail-closed e pin del target;
 - **config** (`config.py`) — loader `scope.toml` fail-closed;
-- **normalizzazione** (`normalize.py`) — output grezzo → finding, con dedup;
+- **parse layer dei collector** (`collectors/`) — per ciascuno, costruzione del
+  comando e trasformazione output-grezzo → `RawResult`, implementati e coperti.
+  L'**unico** stub è `_esegui_live` (I/O subprocess/SSH/psycopg), isolato;
+- **normalizzazione** (`normalize.py`) — `RawResult` → finding, con dedup;
 - **report** (`report/`) — JSON canonico con schema, HTML dai soli dati JSON;
 - **inventario** (`inventory/`) — endpoint e parametri da `openapi.json`;
+- **validatore ForceCommand** (`ssh/`) — l'allowlist lato server che pinna gli
+  argomenti (vedi *SSH ristretto* sotto);
+- **config di rete** (`net/nftables-assess.nft`, `compose.assess.yaml`) —
+  **scritta**, da applicare sulla VM;
 - **runner + CLI** — orchestrazione, metadati, output sequenziale;
-- **collector** (`collectors/`) — i sei, come **stub**: interfaccia completa e
-  comando reale documentato, nessuna esecuzione live;
-- **test** (`tests/`) — 63 test su fixture.
+- **test** (`tests/`) — parser di tutti i collector (zero/malformato/condizione
+  non valida), ForceCommand, scope, modello, normalize, report.
 
-Arriva con l'ambiente VM (venerdì): l'esecuzione live dei sei collector contro
-l'istanza demo, l'applicazione della migrazione `0006` (ruolo `hermes_assess`),
-il validatore `ForceCommand` lato server, l'e2e confinato.
+Resta per la messa in opera (**venerdì, sulla VM**):
+
+- collegare `_esegui_live` al processo reale (subprocess/SSH/psycopg);
+- applicare la migrazione `0006` e creare `hermes_assess`;
+- installare il drop-in `ForceCommand` e le regole `nftables`;
+- e2e confinato contro l'istanza demo.
 
 ## Esecuzione
 
@@ -74,6 +83,15 @@ variabile d'ambiente che li porta:
 
 Il report redige qualunque valore sensibile.
 
+> **TODO (valori dalla VM, venerdì):**
+> - `ssh.host` ← **IP/hostname della VM** (o `host.docker.internal`);
+> - `ASSESS_DB_DSN` ← **DSN di `hermes_assess`**, es.
+>   `postgresql://hermes_assess:<password>@db:5432/hermes_panel` (il ruolo lo
+>   crea la migrazione `0006`, applicata venerdì);
+> - `ASSESS_TARGET_PASSWORD` ← password dell'operatore demo (`HERMES_SEED_DEMO=1`);
+> - in `net/nftables-assess.nft`: gli IP di `app`, `db`, dello scanner e
+>   dell'host VM.
+
 ## Topologia e confinamento (Opzione B)
 
 Lo scanner gira in un container su una rete docker **`internal: true`** che
@@ -83,12 +101,24 @@ black-box (HTTP, nessun accesso al sorgente), non la distanza di rete.
 
 Il confinamento è a due livelli, e **quello che conta è la rete**:
 
-1. **Enforcement (autorevole):** la regola di rete `internal: true`. Ogni
-   uscita non prevista è bloccata al confine.
+1. **Enforcement (autorevole): la rete.** `internal: true` confina `app` e `db`
+   (nessuna uscita), ma **da solo non regge l'eccezione SSH**: una rete
+   internal-only non ha gateway, quindi non può raggiungere `host:22` e il
+   collector `system` non partirebbe mai. Perciò lo scanner sta anche su una
+   seconda rete *con* gateway (`uscita`), ristretta dalle regole
+   **`net/nftables-assess.nft`**: default `drop` più i soli permessi verso
+   `app:8000`, `db:5432`, `host:22`. La garanzia è "gateway sorvegliato", non
+   "nessun gateway". (Config **scritta, da applicare sulla VM**.)
 2. **Tripwire (nel codice):** l'egress self-check prova sentinelle esterne
    (`1.1.1.1:53`, `8.8.8.8:443`, …) e, se *anche una sola* risponde, **rifiuta
    di partire** (uscita non-zero). Non dimostra che ogni uscita sia chiusa:
-   coglie una rete mal configurata e fallisce in sicurezza.
+   coglie una rete mal configurata (regole nft non applicate) e fallisce in
+   sicurezza.
+
+**I servizi da attaccare alla rete dello scanner:** `app` e `db` devono stare
+anche sulla rete `interna` dello scanner (si aggiunge `interna` ai loro
+`networks` nell'override, o la si dichiara condivisa). Lo scanner li raggiunge
+per nome di servizio (`app:8000`, `db:5432`), non via porta pubblicata.
 
 **Non distruttivo, regola dura:** il tool non esegue mai comandi che modificano
 dati o stato. Il DB è letto in sola lettura. `docker compose down -v` cancella
@@ -113,6 +143,32 @@ sacrificabile, **mai** un passo del tool.
   `ForceCommand` validatore che confronta `$SSH_ORIGINAL_COMMAND` con
   un'allowlist di comandi read-only. L'allowlist vive sul server, applicata da
   `sshd`.
+
+### SSH ristretto: installazione del ForceCommand (sulla VM, venerdì)
+
+Il validatore è `assess/ssh/hermes-assess-ssh` (logica in
+`assess/ssh/validatore.py`): un'allowlist che **pinna gli argomenti**, non solo
+il verbo. Ammette i quattro comandi fissi (`ss -tlnp`, `ps aux`, `systemctl
+list-units --type=service --state=running`, `docker ps --format '…'`),
+`cat <percorso>` solo sotto `/opt/pannello` e senza `..`, `ls -la <dir>` con la
+stessa regola; tutto il resto è negato con uscita non-zero.
+
+Installazione sul server (**scritto, non installato** — da fare venerdì):
+
+```bash
+# 1) utente non privilegiato, nessun sudo
+sudo useradd --system --create-home --shell /usr/sbin/nologin assess
+
+# 2) il package assess/ raggiungibile (es. sotto /opt/pannello)
+#    e python3 presente
+
+# 3) in ~assess/.ssh/authorized_keys, la chiave con restrict + ForceCommand:
+restrict,command="/usr/bin/env PYTHONPATH=/opt/pannello python3 /opt/pannello/assess/ssh/hermes-assess-ssh" ssh-ed25519 AAAA... assess
+```
+
+`restrict` toglie port/agent/X11-forwarding, pty e user-rc; `ForceCommand`
+impone il validatore a ogni connessione. Il wrapper client-side non c'entra con
+questa garanzia: è `sshd` ad applicarla.
 
 ## Il report
 
@@ -162,8 +218,13 @@ standard library.
 python -m pytest assess/tests/ -q
 ```
 
-63 test su fixture di output grezzo (`tests/fixtures/`): nessuna rete, nessun
-target. Richiedono `jsonschema` (già in `pyproject [dev]`).
+118 test su fixture di output grezzo (`tests/fixtures/`): nessuna rete, nessun
+target. Coprono i parser di tutti i collector (risultati, zero, malformato,
+condizione non valida), il validatore ForceCommand, lo scope guard, il modello,
+la normalizzazione e il report. Richiedono `jsonschema` (già in `pyproject [dev]`).
+
+La CI del pannello esegue `tests/` (la suite del backend), non `assess/tests/`:
+quest'ultima si lancia a mano col comando sopra.
 
 ## Immagine e licenze
 
