@@ -1,0 +1,8 @@
+[
+  {"endpoint": "POST /api/scope/networks", "parameter": "cidr",
+   "injectable": false, "dbms": "PostgreSQL", "technique": "BEU",
+   "note": "nessuna iniezione: query parametrizzata"},
+  {"endpoint": "POST /api/scope/aliases", "parameter": "name",
+   "injectable": false, "dbms": "PostgreSQL", "technique": "BEU",
+   "note": "nessuna iniezione: query parametrizzata"}
+]

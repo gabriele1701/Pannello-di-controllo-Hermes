@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# scope.toml — perimetro di un run del VSPT (file di ESEMPIO)
+#
+# Copialo in scope.toml e COMPILA i campi DA_COMPILARE. Finche' resta un solo
+# DA_COMPILARE, il loader rifiuta di partire (fail-closed): un perimetro-
+# segnaposto non e' un perimetro.
+#
+# I SEGRETI NON STANNO QUI. Password, DSN del DB e chiave SSH arrivano da
+# variabili d'ambiente o da file montati come secret; qui compare solo il
+# NOME della variabile. Un segreto in questo file finirebbe nel versionamento.
+# ---------------------------------------------------------------------------
+
+[target]
+# Opzione B: lo scanner raggiunge l'app per NOME DI SERVIZIO sulla rete docker
+# interna, non via porta pubblicata. Questo valore di norma non cambia.
+base_url = "http://app:8000"
+
+# Host ammessi per il target. Il nome del target DEVE essere fra questi:
+# qualunque altro host (e ogni IP pubblico) e' fuori perimetro. Nessun DNS
+# esterno viene fatto su questi nomi.
+allowlist = ["app"]
+
+# Utente operatore demo con cui fare login sull'app. La PASSWORD non e' qui:
+# sta nella variabile d'ambiente nominata in password_env.
+operator_user = "DA_COMPILARE"
+password_env = "ASSESS_TARGET_PASSWORD"
+
+[egress]
+# Sentinelle esterne del self-check fail-closed. Se anche una sola risponde,
+# la rete non e' confinata e il run NON parte. Aggiungine pure: piu' sentinelle
+# = tripwire piu' larga.
+sentinelle = [["1.1.1.1", 53], ["8.8.8.8", 443], ["1.1.1.1", 443]]
+timeout_s = 2.0
+
+[db]
+# DSN del ruolo hermes_assess (SELECT-only), via variabile d'ambiente. Il
+# ruolo lo crea la migrazione 0006; il DSN vero non e' qui.
+dsn_env = "ASSESS_DB_DSN"
+
+[ssh]
+# Canale verso l'host della VM. La restrizione vera sta sul server
+# (authorized_keys con restrict + ForceCommand validatore): questo e' solo
+# l'indirizzamento del canale.
+host = "DA_COMPILARE"
+user = "assess"
+port = 22
+# Percorso della chiave montata come secret (NON la chiave).
+key_path = "DA_COMPILARE"
+
+# Directory di output del report (JSON + HTML).
+out_dir = "assess/out"

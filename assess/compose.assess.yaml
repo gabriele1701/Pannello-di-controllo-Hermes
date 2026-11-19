@@ -1,0 +1,56 @@
+# Servizio scanner VSPT — BOZZA. Si usa come OVERRIDE del compose del pannello:
+#
+#     docker compose -f compose.yaml -f assess/compose.assess.yaml up scanner
+#
+# Cosi' lo scanner condivide il progetto con `app` e `db` e li raggiunge per
+# nome di servizio. I valori che dipendono dalla VM sono commentati: si
+# riempiono quando l'ambiente c'e' (milestone di venerdi').
+
+services:
+  scanner:
+    build:
+      context: ..
+      dockerfile: assess/Dockerfile
+    # L'enforcement del confinamento e' QUI: la rete internal:true. Lo scanner
+    # raggiunge solo cio' che e' su questa rete (app, db). Ogni altra uscita e'
+    # bloccata al confine, non da un if. L'egress self-check del tool e' la
+    # tripwire che verifica che questa regola sia davvero in vigore.
+    networks:
+      - interna
+    environment:
+      # Solo NOMI qui: i valori arrivano dall'ambiente dell'host, non dal file.
+      # Password dell'operatore demo e DSN di hermes_assess (SELECT-only).
+      ASSESS_TARGET_PASSWORD: "${ASSESS_TARGET_PASSWORD:?serve la password demo}"
+      ASSESS_DB_DSN: "${ASSESS_DB_DSN:?serve il DSN di hermes_assess}"
+    # La chiave SSH come secret montato, non come variabile. Da abilitare con
+    # la VM:
+    # secrets:
+    #   - assess_ssh_key
+    #
+    # L'unica eccezione all'egress — SSH all'host della VM — richiede i valori
+    # della VM. host.docker.internal mappa l'host dal container:
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+    #
+    # Lo scanner NON parte da solo: niente scansioni al boot. Si lancia a mano.
+    #   docker compose ... run --rm scanner run --config /scope/scope.toml
+    # volumes:
+    #   - ./assess/scope.toml:/scope/scope.toml:ro   # la config compilata
+    #   - ./assess/out:/opt/pannello/assess/out      # i report prodotti
+    profiles:
+      # In un profilo a parte: `up` del pannello non deve tirarsi su anche lo
+      # scanner per sbaglio.
+      - assess
+
+networks:
+  interna:
+    internal: true
+    # Nota: perche' lo scanner raggiunga `app` e `db`, anche loro devono stare
+    # su questa rete. Con l'override qui sopra si aggiunge `interna` ai loro
+    # `networks` nel compose principale, oppure si dichiara `interna` come rete
+    # condivisa del progetto. Su una rete internal:true app e db restano
+    # raggiungibili tra loro e dallo scanner, ma non escono verso Internet.
+
+# secrets:
+#   assess_ssh_key:
+#     file: ./secrets/assess_ssh_key   # chiave privata, MAI nel repo

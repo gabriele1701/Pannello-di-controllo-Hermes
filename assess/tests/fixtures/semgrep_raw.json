@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "check_id": "python.sqlalchemy.security.sqlalchemy-execute-raw-query",
+      "path": "backend/routers/scope.py",
+      "start": {"line": 118},
+      "extra": {"message": "Possibile query grezza con input concatenato",
+                "severity": "WARNING",
+                "metadata": {"cwe": ["CWE-89"], "owasp": ["A03:2021"]}}
+    },
+    {
+      "check_id": "python.lang.security.audit.weak-hash",
+      "path": "backend/security.py",
+      "start": {"line": 44},
+      "extra": {"message": "Hash debole rilevato",
+                "severity": "ERROR",
+                "metadata": {"cwe": ["CWE-327"]}}
+    }
+  ]
+}
