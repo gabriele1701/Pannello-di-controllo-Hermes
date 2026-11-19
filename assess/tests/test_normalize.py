@@ -13,7 +13,6 @@ from assess.model import (
     EsitoCheck,
     PentestResult,
     RawResult,
-    RiskTier,
     Source,
 )
 from assess.normalize import normalizza
@@ -62,7 +61,7 @@ def test_sqlmap_positivo_e_confermato():
     findings = normalizza([_raw(Source.SQLMAP, elementi)])
     assert len(findings) == 1
     f = findings[0]
-    assert f.severity is RiskTier.ROSSO  # 5x5=25
+    assert f.severity == "critical"  # 5x5=25
     assert f.pentest_result is PentestResult.POSITIVE
     assert "CWE-89" in f.references
 
@@ -71,7 +70,7 @@ def test_postgres_attestazione_conforme_e_verde(carica_fixture):
     dati = carica_fixture("postgres_raw.json")
     findings = normalizza([_raw(Source.POSTGRES, dati)])
     assert len(findings) == 2
-    assert all(f.severity is RiskTier.VERDE for f in findings)
+    assert all(f.severity == "low" for f in findings)
     assert all(f.title.startswith("Attestazione") for f in findings)
 
 
@@ -81,8 +80,8 @@ def test_system_deviazione_e_rossa_conforme_verde(carica_fixture):
     titoli = {f.title.split(":")[0]: f for f in findings}
     assert "Attestazione" in titoli  # permessi .env conformi
     assert "Deviazione" in titoli    # porta db esposta
-    assert titoli["Attestazione"].severity is RiskTier.VERDE
-    assert titoli["Deviazione"].severity is RiskTier.ROSSO  # 4x3=12
+    assert titoli["Attestazione"].severity == "low"
+    assert titoli["Deviazione"].severity == "high"  # 4x3=12
 
 
 def test_dedup_collassa_i_duplicati():

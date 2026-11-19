@@ -17,13 +17,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from assess.model import Category, PentestResult, Scope, Source, Status, VerificationConfidence
+from assess.risk import SEVERITA
 
 if TYPE_CHECKING:
     from assess.runner import Esecuzione
 
-#: Valori ammessi dei vocabolari, ricavati dagli enum per non duplicarli a mano.
-_SEVERITA = ["verde", "giallo", "rosso"]
-_BANDE = ["low", "medium", "high", "critical"]
+#: Severita' ammesse (banda nominale), prese da risk.py per non duplicarle.
+_SEVERITA = list(SEVERITA)
 
 
 def _enum_vals(enum_cls: type) -> list[str]:
@@ -37,7 +37,7 @@ SCHEMA_FINDING: dict[str, Any] = {
     "required": [
         "id", "title", "affected_element", "category", "source", "evidence",
         "status", "pentest_result", "impact", "probability", "risk_score",
-        "severity", "banda", "verification_confidence", "scope",
+        "severity", "verification_confidence", "scope",
         "recommendation", "references",
     ],
     "properties": {
@@ -53,7 +53,6 @@ SCHEMA_FINDING: dict[str, Any] = {
         "probability": {"type": "integer", "minimum": 1, "maximum": 5},
         "risk_score": {"type": "integer", "minimum": 1, "maximum": 25},
         "severity": {"type": "string", "enum": _SEVERITA},
-        "banda": {"type": "string", "enum": _BANDE},
         "verification_confidence": {
             "type": "string", "enum": _enum_vals(VerificationConfidence)
         },

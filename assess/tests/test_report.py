@@ -65,6 +65,20 @@ def test_documento_con_findings_valida_contro_schema(carica_fixture):
     assert doc["riepilogo"]["totale"] == len(doc["findings"]) > 0
 
 
+def test_severity_e_la_banda_nel_json(carica_fixture):
+    """La severity nel JSON e' la banda low/medium/high/critical, e non esiste
+    piu' un campo 'banda' separato (la severity E' la banda)."""
+    ex = _esecuzione_con_findings(carica_fixture)
+    doc = json_report.documento(ex)
+    bande = {"low", "medium", "high", "critical"}
+    assert doc["findings"], "servono finding per il test"
+    for f in doc["findings"]:
+        assert f["severity"] in bande
+        assert "banda" not in f
+    # Il riepilogo conta per banda, non per colore.
+    assert set(doc["riepilogo"]["per_severita"]) == bande
+
+
 def test_documento_scaffold_vuoto_valida(carica_fixture):
     """Anche il run tutto-saltato (nessun finding) e' un documento valido, con
     i limiti registrati: un report onesto di 'non ho potuto eseguire' deve

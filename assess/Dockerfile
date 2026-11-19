@@ -62,14 +62,14 @@ RUN pip install --no-cache-dir \
 
 WORKDIR /opt/pannello
 
-# Dipendenze del pannello che assess importa (RiskTier da backend.models, e
-# quindi SQLAlchemy/pydantic). requirements.txt e' il lock del repo.
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Il codice: assess/, piu' backend/ (per l'enum del dominio) e openapi.json
-# (per l'inventario). NON si installa come pacchetto: PYTHONPATH punta qui.
-COPY backend/ ./backend/
+# assess NON dipende dal pannello a runtime: la severita' e' una banda calcolata
+# in casa (risk.py), non piu' RiskTier di backend.models, e il resto dello
+# scaffold usa solo la standard library. Quindi niente COPY di backend/ e
+# nessuna pip install di requirements.txt del pannello. (L'implementazione live
+# del collector DB aggiungera' qui psycopg quando servira', venerdi'.)
+#
+# Il codice: assess/ e openapi.json (per l'inventario). NON si installa come
+# pacchetto: PYTHONPATH punta qui.
 COPY assess/ ./assess/
 COPY openapi.json ./openapi.json
 

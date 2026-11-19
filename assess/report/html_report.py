@@ -18,8 +18,17 @@ from typing import Any
 
 _TEMPLATE = Path(__file__).parent / "templates" / "report.html"
 
-#: Mappa severita' -> classe CSS (gli stessi tre colori del dominio).
-_CLASSE_SEV = {"verde": "verde", "giallo": "giallo", "rosso": "rosso"}
+#: Mappa severita' (banda low/medium/high/critical) -> classe CSS di colore.
+#: Il template ha tre colori; high e critical condividono il rosso, ma la
+#: severita' testuale nella pill li distingue (e' il dato, non il colore).
+_CLASSE_SEV = {
+    "low": "verde",
+    "medium": "giallo",
+    "high": "rosso",
+    "critical": "rosso",
+}
+#: Ordine di gravita' decrescente, per i conteggi del riepilogo.
+_SEV_ORDINE = ("critical", "high", "medium", "low")
 #: Esito del check -> classe CSS, per leggere a colpo d'occhio cosa non e' andato.
 _CLASSE_ESITO = {"completato": "verde", "saltato": "giallo", "fallito": "rosso"}
 
@@ -89,7 +98,7 @@ def _tabella_checks(meta: dict[str, Any]) -> str:
 def _conteggi(riepilogo: dict[str, Any]) -> str:
     per_sev = riepilogo.get("per_severita", {})
     box = []
-    for sev in ("rosso", "giallo", "verde"):
+    for sev in _SEV_ORDINE:
         cls = _CLASSE_SEV[sev]
         box.append(
             f'<div class="box {cls}"><span class="num">{_e(per_sev.get(sev,0))}</span>{_e(sev)}</div>'
@@ -107,8 +116,7 @@ def _tabella_findings(findings: list[dict[str, Any]]) -> str:
         righe.append(
             '<tr class="finding">'
             f"<td>{_e(f.get('id',''))}</td>"
-            f'<td><span class="pill {cls}">{_e(f.get("severity",""))}</span><br>'
-            f'<span class="muto">{_e(f.get("banda",""))}</span></td>'
+            f'<td><span class="pill {cls}">{_e(f.get("severity",""))}</span></td>'
             f"<td><strong>{_e(f.get('title',''))}</strong><br>"
             f'<code>{_e(f.get("affected_element",""))}</code><br>'
             f'<span class="ev">{_e(f.get("evidence",""))}</span><br>'

@@ -130,22 +130,31 @@ presentato come superato: i check saltati/falliti e i limiti sono mostrati in
 cima al report, non in nota. `pentest_result: negative` significa *non rilevato
 nei test svolti*, non *assente*.
 
-### Severità: allineamento all'enum del repo
+### Severità: la banda derivata dal `risk_score`
 
-Il repo non ha un enum `Severity`: l'unico asse di rischio a colori è
-`RiskTier` (`verde`/`giallo`/`rosso`) di `backend/models.py`, gli stessi tre
-valori di hermes-core. Le quattro bande provvisorie della traccia si allineano
-ai tre colori reali:
+La `severity` di un finding è la **banda nominale** standard
+*low/medium/high/critical*, derivata dal `risk_score`:
 
-| `risk_score` | banda nominale | `severity` (RiskTier) |
-|---|---|---|
-| 1–4 | low | verde |
-| 5–9 | medium | giallo |
-| 10–25 | high / critical | rosso |
+| `risk_score` | `severity` |
+|---|---|
+| 1–4 | low |
+| 5–9 | medium |
+| 10–15 | high |
+| 16–25 | critical |
 
-Il dettaglio *high* vs *critical* non si perde: resta nel `risk_score` numerico
-(10–15 vs 16–25) e nell'etichetta `banda`. Il colore è l'enum del dominio, il
-numero porta il dettaglio.
+Non è `RiskTier` (`verde`/`giallo`/`rosso`): nel pannello quello è l'asse
+dell'**invasività di un tool** — quanto è pericoloso *eseguirlo* — non la
+**gravità di una vulnerabilità**, e il pannello tiene i due assi separati di
+proposito. Riusarlo li fonderebbe, e legherebbe l'assessor a `backend`. Non è
+nemmeno un enum nuovo: è la scala a quattro livelli calcolata in casa
+(`risk.py`), per cui il confine *high* / *critical* a 16 torna a contare.
+
+La `severity` **non** è mai un input libero: `Finding` la deriva sempre dal
+`risk_score` e rifiuta un oggetto incoerente. Non esiste un campo `banda`
+separato — la severity *è* la banda.
+
+Di conseguenza lo scaffold non dipende da `backend` a runtime: usa solo la
+standard library.
 
 ## Test
 

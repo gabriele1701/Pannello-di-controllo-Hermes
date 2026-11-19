@@ -2,8 +2,10 @@
 
 Un ``Finding`` e' una riga del report: una cosa osservata, con la sua
 evidenza, il suo stato di verifica e il suo rischio calcolato. La severita'
-**non** e' un campo libero: deriva dal punteggio di rischio (``risk.py``) ed
-e' un ``RiskTier`` del repo, non un enum nuovo.
+**non** e' un campo libero: e' la banda nominale (*low/medium/high/critical*)
+derivata dal punteggio di rischio (``risk.py``) -- non ``RiskTier`` (che nel
+pannello e' l'invasivita' di un tool, non la gravita' di una vulnerabilita') e
+non un enum nuovo.
 
 Invariante di onestita'
 -----------------------
@@ -29,15 +31,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from backend.models import RiskTier
-
-from assess.risk import banda_nominale, rischio, severity_da_score
+from assess.risk import rischio, severita_da_score
 
 
 # --------------------------------------------------------------------------- #
 # Vocabolari del finding
 #
-# `StrEnum` come in `backend/models.py`: il valore e' la stringa che finisce
+# `StrEnum`: il valore e' la stringa che finisce
 # nel JSON, cosi' la serializzazione non ha bisogno di una tabella di
 # traduzione che possa divergere dall'enum.
 # --------------------------------------------------------------------------- #
@@ -170,7 +170,9 @@ class Finding:
     impact: int
     probability: int
     risk_score: int
-    severity: RiskTier
+    #: Banda nominale low/medium/high/critical, SEMPRE derivata da risk_score
+    #: (vedi ``__post_init__`` e ``nuovo``): mai un valore scritto a mano.
+    severity: str
     verification_confidence: VerificationConfidence
     scope: Scope
     recommendation: str
@@ -183,11 +185,11 @@ class Finding:
                 f"{self.id}: risk_score={self.risk_score} non e' impatto×"
                 f"probabilita' ({self.impact}×{self.probability}={atteso})"
             )
-        atteso_sev = severity_da_score(self.risk_score)
+        atteso_sev = severita_da_score(self.risk_score)
         if self.severity != atteso_sev:
             raise ValueError(
-                f"{self.id}: severity={self.severity} non corrisponde al "
-                f"punteggio {self.risk_score} (atteso {atteso_sev})"
+                f"{self.id}: severity={self.severity!r} non corrisponde al "
+                f"punteggio {self.risk_score} (atteso {atteso_sev!r})"
             )
 
     @classmethod
@@ -227,7 +229,7 @@ class Finding:
             impact=impact,
             probability=probability,
             risk_score=punteggio,
-            severity=severity_da_score(punteggio),
+            severity=severita_da_score(punteggio),
             verification_confidence=verification_confidence,
             scope=scope if scope is not None else scope_di(source),
             recommendation=recommendation,
@@ -236,7 +238,8 @@ class Finding:
 
     def to_json(self) -> dict[str, Any]:
         """Oggetto JSON canonico. Chiavi nell'ordine dello schema §7, enum
-        come stringa, ``banda`` aggiunta per leggibilita' (descrittiva)."""
+        come stringa. ``severity`` E' la banda nominale (low/medium/high/
+        critical): non c'e' un campo ``banda`` separato, sarebbe lo stesso dato."""
         return {
             "id": self.id,
             "title": self.title,
@@ -249,8 +252,7 @@ class Finding:
             "impact": self.impact,
             "probability": self.probability,
             "risk_score": self.risk_score,
-            "severity": self.severity.value,
-            "banda": banda_nominale(self.risk_score),
+            "severity": self.severity,
             "verification_confidence": self.verification_confidence.value,
             "scope": self.scope.value,
             "recommendation": self.recommendation,
@@ -302,7 +304,6 @@ __all__ = [
     "FONTI_INTERNE",
     "PentestResult",
     "RawResult",
-    "RiskTier",
     "Scope",
     "Source",
     "Status",

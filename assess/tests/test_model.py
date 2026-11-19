@@ -1,10 +1,11 @@
-"""Modello e rischio: il calcolo I×P e la mappatura della severita'.
+"""Modello e rischio: il calcolo I×P e la severita' come banda nominale.
 
-Il rischio e' il prodotto di due assi 1–5, e la severita' viene da li'. Questi
-test fissano i confini delle bande e l'allineamento ai tre colori reali del
-repo (``RiskTier``), e verificano che un finding non possa essere costruito con
-un rischio o una severita' incoerenti con i suoi assi — l'onesta' del modello
-non e' una convenzione, e' un invariante che solleva.
+Il rischio e' il prodotto di due assi 1–5, e la severita' viene da li' come
+banda *low/medium/high/critical* (non piu' ``RiskTier``: quello nel pannello e'
+l'invasivita' di un tool, non la gravita' di una vulnerabilita'). Questi test
+fissano i confini delle quattro bande e verificano che un finding non possa
+essere costruito con un rischio o una severita' incoerenti con i suoi assi —
+l'onesta' del modello non e' una convenzione, e' un invariante che solleva.
 """
 
 from __future__ import annotations
@@ -17,13 +18,12 @@ from assess.model import (
     Finding,
     PentestResult,
     RawResult,
-    RiskTier,
     Scope,
     Source,
     Status,
     VerificationConfidence,
 )
-from assess.risk import banda_nominale, rischio, severity_da_score
+from assess.risk import rischio, severita_da_score
 
 
 # --------------------------------------------------------------------------- #
@@ -55,37 +55,28 @@ def test_rischio_bool_rifiutato():
 
 
 # --------------------------------------------------------------------------- #
-# severita' dai confini delle bande
+# severita' (banda) dai confini
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.parametrize(
-    "score,tier",
+    "score,banda",
     [
-        (1, RiskTier.VERDE), (4, RiskTier.VERDE),
-        (5, RiskTier.GIALLO), (9, RiskTier.GIALLO),
-        (10, RiskTier.ROSSO), (15, RiskTier.ROSSO),
-        (16, RiskTier.ROSSO), (25, RiskTier.ROSSO),
+        (1, "low"), (4, "low"),
+        (5, "medium"), (9, "medium"),
+        (10, "high"), (15, "high"),
+        (16, "critical"), (25, "critical"),
     ],
 )
-def test_severity_confini(score, tier):
-    assert severity_da_score(score) is tier
-
-
-@pytest.mark.parametrize(
-    "score,banda",
-    [(4, "low"), (5, "medium"), (9, "medium"), (10, "high"), (15, "high"),
-     (16, "critical"), (25, "critical")],
-)
-def test_banda_nominale_confini(score, banda):
-    assert banda_nominale(score) == banda
+def test_severity_confini(score, banda):
+    assert severita_da_score(score) == banda
 
 
 def test_severity_score_fuori_intervallo_solleva():
     with pytest.raises(ValueError):
-        severity_da_score(0)
+        severita_da_score(0)
     with pytest.raises(ValueError):
-        severity_da_score(26)
+        severita_da_score(26)
 
 
 # --------------------------------------------------------------------------- #
@@ -107,7 +98,7 @@ def _finding(impatto=3, probabilita=2, **kw):
 def test_finding_nuovo_deriva_rischio_e_severita():
     f = _finding(impatto=4, probabilita=4)
     assert f.risk_score == 16
-    assert f.severity is RiskTier.ROSSO
+    assert f.severity == "critical"
 
 
 def test_finding_scope_dedotto_dalla_fonte():
@@ -123,7 +114,7 @@ def test_finding_incoerente_rifiutato():
             id="VSPT-0001", title="t", affected_element="x",
             category=Category.CONFIG, source=Source.POSTGRES, evidence="e",
             status=Status.CONFIRMED, pentest_result=PentestResult.NOT_APPLICABLE,
-            impact=2, probability=2, risk_score=99, severity=RiskTier.VERDE,
+            impact=2, probability=2, risk_score=99, severity="low",
             verification_confidence=VerificationConfidence.HIGH, recommendation="r",
             scope=Scope.INTERNAL,
         )
@@ -135,22 +126,25 @@ def test_finding_severita_incoerente_rifiutata():
             id="VSPT-0001", title="t", affected_element="x",
             category=Category.CONFIG, source=Source.POSTGRES, evidence="e",
             status=Status.CONFIRMED, pentest_result=PentestResult.NOT_APPLICABLE,
-            impact=5, probability=5, risk_score=25, severity=RiskTier.VERDE,
+            impact=5, probability=5, risk_score=25, severity="low",
             verification_confidence=VerificationConfidence.HIGH, recommendation="r",
             scope=Scope.INTERNAL,
         )
 
 
-def test_finding_to_json_ha_tutti_i_campi():
+def test_finding_to_json_ha_i_campi_giusti():
     f = _finding()
     j = f.to_json()
     attesi = {
         "id", "title", "affected_element", "category", "source", "evidence",
         "status", "pentest_result", "impact", "probability", "risk_score",
-        "severity", "banda", "verification_confidence", "scope",
+        "severity", "verification_confidence", "scope",
         "recommendation", "references",
     }
     assert attesi <= set(j)
+    # La severita' E' la banda: niente campo "banda" ridondante accanto.
+    assert "banda" not in j
+    assert j["severity"] in {"low", "medium", "high", "critical"}
 
 
 # --------------------------------------------------------------------------- #
