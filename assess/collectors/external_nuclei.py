@@ -39,7 +39,7 @@ class NucleiCollector(CollectorBase):
         for endpoint in ctx.inventario:
             # OpenAPI path parameters are replaced with a harmless sample value;
             # literal braces are not valid request targets for the scanner.
-            path = re.sub(r"\\{[^{}]+\\}", "1", endpoint.path)
+            path = re.sub(r"\{[^{}]+\}", "1", endpoint.path)
             url = f"{base}{path}"
             if url not in visti:
                 visti.append(url)
