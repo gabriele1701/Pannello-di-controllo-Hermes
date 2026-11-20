@@ -176,6 +176,84 @@ un'applicazione che non si connette.
 
 ---
 
+## VSPT — Risk Assessment e test DAST
+
+Nel repository è incluso `assess/`, un assessor CLI per la web application e
+l'ambiente che la ospita. Produce un report canonico JSON e una vista HTML
+derivata dallo stesso documento.
+
+### Esecuzione di Nuclei
+
+Il collector **Nuclei** esegue uno scan HTTP autenticato sugli endpoint
+dichiarati in `openapi.json`, usando esclusivamente i template locali in
+`templates_nuclei/`. I template inclusi verificano l'assenza di alcuni header
+di sicurezza HTTP (Content-Security-Policy, X-Content-Type-Options,
+X-Frame-Options e Referrer-Policy). Sono controlli di configurazione: un match
+è un'evidenza da verificare, non la dimostrazione automatica di una
+vulnerabilità sfruttabile.
+
+Prerequisiti:
+
+- Docker Compose installato;
+- stack del pannello avviabile e operatore creato;
+- `assess/scope.toml` compilato con il target autorizzato e l'allowlist;
+- rete scanner e regole nftables host-side configurate secondo
+  [la guida VSPT](assess/README-assess.md);
+- credenziali dell'operatore disponibili solo nell'ambiente, non nel file di
+  scope o nel repository.
+
+Dalla radice del repository:
+
+```bash
+# Recupera la password dell'operatore dal .env senza stamparla nel terminale.
+export ASSESS_TARGET_PASSWORD="$(sed -n 's/^HERMES_ADMIN_PASSWORD=//p' .env)"
+
+# Avvia app e database usando anche la topologia di rete dell'assessor.
+VSPT_SUBNET_USCITA=10.77.42.0/24 docker compose \
+  -f compose.yaml -f assess/compose.assess.yaml up -d --build app db
+
+# Costruisce lo scanner con i template offline inclusi e validati nel build.
+VSPT_SUBNET_USCITA=10.77.42.0/24 docker compose \
+  -f compose.yaml -f assess/compose.assess.yaml --profile assess build scanner
+
+# Esegue soltanto Nuclei e genera assess/out/report.json + report.html.
+VSPT_SUBNET_USCITA=10.77.42.0/24 docker compose \
+  -f compose.yaml -f assess/compose.assess.yaml --profile assess \
+  run --rm scanner run --config /scope/scope.toml --only nuclei
+```
+
+Il self-check di egress viene eseguito **prima del login HTTP**. Se una
+sentinella esterna risponde, il run viene rifiutato. Il login usa
+`POST /api/auth/login`; il cookie `hermes_session` resta in memoria e viene
+passato a Nuclei senza essere scritto nei report. Redirect HTTP disabilitati,
+timeout massimo di 10 minuti e template update disabilitato: lo scan non
+scarica template né segue redirect verso host esterni.
+
+Per consultare il risultato:
+
+- `assess/out/report.json`: report canonico con finding e metadati dei check;
+- `assess/out/report.html`: vista HTML offline derivata dal JSON.
+
+Un run senza match significa soltanto che i template eseguiti non hanno
+rilevato le condizioni cercate sugli endpoint raggiunti. Non equivale a una
+certificazione di assenza di vulnerabilità.
+
+### Stato dei controlli
+
+| Collector | Stato |
+|---|---|
+| Nuclei | Esecuzione live implementata; template locali per header HTTP |
+| SQLmap | In roadmap: parser e profilo prudente presenti, esecuzione live non collegata |
+| Semgrep | Esecuzione live non collegata |
+| pip-audit | Esecuzione live non collegata |
+| PostgreSQL | Connessione live non collegata |
+| System / SSH | Trasporto live implementato; verificare la guida VSPT per la messa in opera |
+
+Per la procedura completa, i vincoli di rete, la struttura del report e i test:
+[assess/README-assess.md](assess/README-assess.md).
+
+---
+
 ## Le quattro decisioni che reggono il progetto
 
 ### 1. I due assi del rischio restano separati
