@@ -8,6 +8,11 @@
 # Nessun segreto viene stampato: la leggibilita' si prova con `test -r`, mai con
 # `cat`.
 #
+# Criterio del controllo 3: un utente ORDINARIO — non root, non in gid 1002,
+# non nei gruppi docker/sudo/wheel — non deve poter leggere la chiave. Un utente
+# privilegiato la leggerebbe per i suoi privilegi e renderebbe il test
+# inconcludente, quindi lo script lo rifiuta prima di provare la lettura.
+#
 # Uso:
 #   assess/ssh/verifica-setup.sh [UTENTE_DI_PROVA]
 # oppure via variabili d'ambiente (override dei default):
@@ -61,17 +66,38 @@ else
     fail "2) il container NON legge la chiave (${KEY_CT})"
 fi
 
-# --- 3) un altro utente non privilegiato NON legge la chiave sull'host ----- #
+# --- 3) un utente ORDINARIO NON legge la chiave sull'host ------------------ #
+# Il controllo ha senso solo se l'utente di prova e' davvero non privilegiato:
+# un root, o un utente in gid 1002 o nei gruppi docker/sudo/wheel, leggerebbe la
+# chiave per i suoi privilegi, non per un difetto dei permessi -> il test sarebbe
+# inconcludente. Si valida PRIMA del test di lettura.
 if [ -z "${UTENTE_PROVA}" ]; then
     fail "3) nessun utente di prova indicato: crea un utente NON privilegiato \
 (es. 'sudo useradd -m provavspt') e rilancia con VSPT_TEST_USER=provavspt"
 elif ! id "${UTENTE_PROVA}" >/dev/null 2>&1; then
     fail "3) l'utente di prova '${UTENTE_PROVA}' non esiste: crealo non \
 privilegiato e rilancia"
-elif sudo -u "${UTENTE_PROVA}" test -r "${KEY_HOST}" 2>/dev/null; then
-    fail "3) '${UTENTE_PROVA}' PUO' leggere la chiave ${KEY_HOST} (non deve)"
+elif [ "$(id -u "${UTENTE_PROVA}")" -eq 0 ]; then
+    fail "3) controllo inconcludente: l'utente di prova '${UTENTE_PROVA}' e' root \
+(uid 0): usane uno ordinario"
 else
-    pass "3) '${UTENTE_PROVA}' non puo' leggere la chiave sull'host"
+    gruppi_nomi=$(id -nG "${UTENTE_PROVA}" 2>/dev/null)
+    gruppi_num=$(id -G "${UTENTE_PROVA}" 2>/dev/null)
+    privilegio=""
+    for g in docker sudo wheel; do
+        if grep -qw "${g}" <<<"${gruppi_nomi}"; then privilegio="gruppo ${g}"; break; fi
+    done
+    if [ -z "${privilegio}" ] && grep -qw 1002 <<<"${gruppi_num}"; then
+        privilegio="gid 1002"
+    fi
+    if [ -n "${privilegio}" ]; then
+        fail "3) controllo inconcludente: l'utente di prova e' privilegiato \
+(${privilegio}): usane uno ordinario"
+    elif sudo -u "${UTENTE_PROVA}" test -r "${KEY_HOST}" 2>/dev/null; then
+        fail "3) '${UTENTE_PROVA}' PUO' leggere la chiave ${KEY_HOST} (non deve)"
+    else
+        pass "3) '${UTENTE_PROVA}' (ordinario) non puo' leggere la chiave sull'host"
+    fi
 fi
 
 # --- 4) il container NON puo' modificare chiave/known_hosts (mount RO) ------ #

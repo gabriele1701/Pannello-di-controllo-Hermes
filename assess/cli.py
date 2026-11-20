@@ -23,6 +23,7 @@ from assess.collectors.base import RunContext
 from assess.inventory.openapi_endpoints import inventario_da_file
 from assess.report import html_report, json_report
 from assess.runner import collectors_standard, esegui_run
+from assess.wrappers.ssh import WrapperSsh
 
 #: Una riga di "cosa fa", per l'output sequenziale. Chiave = name del collector.
 _DESCRIZIONE = {
@@ -51,6 +52,18 @@ def _trova_openapi(repo_root: Path) -> Path | None:
     return p if p.is_file() else None
 
 
+def canale_ssh(cfg: config.ConfigScope) -> WrapperSsh | None:
+    """Il wrapper SSH se la config lo definisce (sezione [ssh] con un host),
+    altrimenti None.
+
+    Senza un canale configurato il collector ``system`` (``requires={"ssh"}``)
+    resta NOT_RUN per requisito non soddisfatto: mai un finto esito, e nemmeno
+    un tentativo di connessione verso un host vuoto."""
+    if cfg.ssh is not None and cfg.ssh.host:
+        return WrapperSsh(cfg.ssh)
+    return None
+
+
 def comando_run(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
     try:
@@ -74,9 +87,9 @@ def comando_run(args: argparse.Namespace) -> int:
         target=target,
         base_url=cfg.target.base_url,
         inventario=inventario,
-        http=None,   # nessuna sessione autenticata nello scaffold
-        ssh=None,    # nessun canale SSH nello scaffold
-        db=None,     # nessuna connessione DB nello scaffold
+        http=None,   # nessuna sessione autenticata (fuori da questo step)
+        ssh=canale_ssh(cfg),  # il trasporto SSH live, se la config lo definisce
+        db=None,     # nessuna connessione DB (fuori da questo step)
         commit_pannello=_commit_pannello(repo_root),
     )
 

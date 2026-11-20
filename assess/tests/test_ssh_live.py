@@ -75,6 +75,16 @@ def test_verbo_e_un_singolo_argv():
     assert argv.count("system.processes; id") == 1
 
 
+def test_argv_include_la_porta():
+    w = WrapperSsh(ConfigSsh(
+        host="vm.local", user="assess", port=2222,
+        key_path="/run/secrets/k", known_hosts_path="/run/secrets/kh",
+    ))
+    argv = w._argv("system.info")
+    assert "-p" in argv
+    assert argv[argv.index("-p") + 1] == "2222"
+
+
 # --------------------------------------------------------------------------- #
 # _invia: successo e guasti
 # --------------------------------------------------------------------------- #

@@ -135,6 +135,7 @@ class WrapperSsh:
         return [
             "ssh",
             "-i", cfg.key_path,
+            "-p", str(cfg.port),
             "-o", "BatchMode=yes",            # mai prompt interattivi
             "-o", "IdentitiesOnly=yes",       # solo la chiave data, non l'agent
             "-o", "StrictHostKeyChecking=yes",  # host sconosciuto -> rifiuta
