@@ -26,7 +26,6 @@ from assess.model import EsitoCheck, Source
 from assess.normalize import normalizza
 from assess.wrappers.ssh import (
     Envelope,
-    EsecuzioneLiveNonDisponibile,
     ProtocolloNonValido,
     WrapperSsh,
     leggi_envelope,
@@ -88,10 +87,26 @@ def test_client_esegui_verbo_non_ammesso():
         w.esegui("rm -rf /")
 
 
-def test_client_esegui_e_lo_stub_io():
-    w = WrapperSsh(ConfigSsh(host="vm", user="assess"))
-    with pytest.raises(EsecuzioneLiveNonDisponibile):
-        w.esegui("system.listeners")
+def test_client_esegui_passa_dal_trasporto(monkeypatch):
+    # Il trasporto live e' ora implementato (vedi test_ssh_live). Qui basta che
+    # esegui() di un verbo ammesso arrivi al trasporto: con subprocess mockato
+    # (nessun I/O reale) l'envelope torna e viene parsato.
+    import assess.wrappers.ssh as sshmod
+
+    envelope = '{"protocol_version":1,"check_id":"SYS-02","status":"ok","data":{"listeners":[],"count":0,"process_visibility":"limited","limitations":[]},"error":null}'
+
+    class _C:
+        stdout = envelope + "\n"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr(sshmod.subprocess, "run", lambda *a, **k: _C())
+    w = WrapperSsh(ConfigSsh(
+        host="vm", user="assess",
+        key_path="/run/secrets/k", known_hosts_path="/run/secrets/kh",
+    ))
+    env = w.esegui("system.listeners")
+    assert env.ok and env.check_id == "SYS-02"
 
 
 # --------------------------------------------------------------------------- #

@@ -23,7 +23,7 @@ import pytest
 
 from assess.config import ConfigSsh
 from assess.source_ingest import sorgente_da_envelope
-from assess.wrappers.ssh import EsecuzioneLiveNonDisponibile, WrapperSsh, leggi_envelope
+from assess.wrappers.ssh import Envelope, VERBI, WrapperSsh, leggi_envelope
 
 RADICE = Path(__file__).resolve().parents[2]
 WRAPPER = RADICE / "assess" / "ssh" / "vspt-ssh-wrapper"
@@ -129,12 +129,26 @@ def test_export_poi_ingest_end_to_end(sorgente_finto):
 # --------------------------------------------------------------------------- #
 
 
-def test_fix1_client_ammette_source_export():
-    w = WrapperSsh(ConfigSsh(host="vm", user="assess"))
-    # NON deve sollevare ValueError ("verbo non ammesso"): deve arrivare allo
-    # stub dell'I/O live.
-    with pytest.raises(EsecuzioneLiveNonDisponibile):
-        w.esegui("source.export")
+def test_fix1_client_ammette_source_export(monkeypatch):
+    # NON deve sollevare ValueError ("verbo non ammesso"): il verbo e' in VERBI
+    # e la chiamata arriva al trasporto. Con subprocess mockato (nessun I/O
+    # reale) l'envelope torna e viene parsato: nessun ValueError.
+    import assess.wrappers.ssh as sshmod
+
+    envelope = '{"protocol_version":1,"check_id":"SRC-01","status":"error","data":null,"error":{"code":"EXPORT_READ_ERROR"}}'
+
+    class _C:
+        stdout = envelope + "\n"
+        stderr = ""
+        returncode = 1
+
+    monkeypatch.setattr(sshmod.subprocess, "run", lambda *a, **k: _C())
+    w = WrapperSsh(ConfigSsh(
+        host="vm", user="assess",
+        key_path="/run/secrets/k", known_hosts_path="/run/secrets/kh",
+    ))
+    assert isinstance(w.esegui("source.export"), Envelope)
+    assert "source.export" in VERBI
 
 
 # --------------------------------------------------------------------------- #

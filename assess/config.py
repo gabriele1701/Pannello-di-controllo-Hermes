@@ -67,8 +67,13 @@ class ConfigSsh:
     host: str = ""
     user: str = "assess"
     port: int = 22
-    #: Percorso della chiave, montata come secret. Non e' la chiave.
+    #: Percorso DENTRO il container della chiave privata, montata come secret
+    #: (es. /run/secrets/scanner_ed25519). Non e' la chiave: solo dove trovarla.
     key_path: str = ""
+    #: Percorso DENTRO il container del file known_hosts che fissa l'identita'
+    #: dell'host della VM (per StrictHostKeyChecking=yes). Nessun default che
+    #: indovini: va dichiarato in scope.toml, o il trasporto SSH non parte.
+    known_hosts_path: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +197,7 @@ def carica(percorso: str | Path) -> ConfigScope:
         user=str(ssh_raw.get("user", "assess")),
         port=int(ssh_raw.get("port", 22)),
         key_path=str(ssh_raw.get("key_path", "")),
+        known_hosts_path=str(ssh_raw.get("known_hosts_path", "")),
     )
     out_dir = str(dati.get("out_dir", "assess/out"))
 

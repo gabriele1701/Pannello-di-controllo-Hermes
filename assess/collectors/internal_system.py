@@ -15,7 +15,9 @@ I tre verbi:
 * ``system.info`` (SYS-01) e ``system.processes`` (SYS-03) danno **attestazioni
   di contesto** (identita' host, numero di processi), non finding inventati.
 
-Nello scaffold ``_esegui_live`` e' l'unico stub: senza VM non c'e' canale SSH.
+``_esegui_live`` invia i tre verbi via il wrapper SSH e riunisce le righe
+envelope grezze; il ``parse`` qui sotto resta l'unico a interpretarle. Senza un
+canale SSH nel contesto (nessuna VM) il collector viene saltato dal runner.
 """
 
 from __future__ import annotations
@@ -28,7 +30,12 @@ from assess.collectors.base import (
     raw_fallito,
 )
 from assess.model import RawResult, Scope, Source
-from assess.wrappers.ssh import Envelope, ProtocolloNonValido, leggi_envelope
+from assess.wrappers.ssh import (
+    Envelope,
+    ProtocolloNonValido,
+    TrasportoSshFallito,
+    leggi_envelope,
+)
 
 #: Porte attese in ascolto: l'app e il database del compose.
 PORTE_ATTESE = {8000: "app (uvicorn)", 5432: "db (postgres)"}
@@ -169,9 +176,23 @@ class SystemCollector(CollectorBase):
         return raw_completato(self.source, self.comando, attestazioni, nota)
 
     def _esegui_live(self, ctx: RunContext) -> str:
-        raise EsecuzioneLiveNonDisponibile(
-            "system live non disponibile nello scaffold; verbi: " + " ; ".join(VERBI)
-        )
+        """Invia i tre verbi via il wrapper SSH e riunisce le RIGHE envelope
+        grezze con '\\n', nell'ordine dei verbi, cosi' che il ``parse`` esistente
+        le consumi. Non interpreta qui gli envelope (niente logica duplicata).
+
+        Se il trasporto di un verbo fallisce, quella riga semplicemente manca:
+        ``parse`` gia' tratta SYS-02 assente/errore come FALLITO. Non si inventa
+        un envelope per coprire il buco."""
+        wrapper = ctx.ssh
+        if wrapper is None:
+            raise EsecuzioneLiveNonDisponibile("nessun canale SSH nel contesto")
+        righe = []
+        for verbo in VERBI:
+            try:
+                righe.append(wrapper.riga_grezza(verbo))
+            except TrasportoSshFallito:
+                continue  # riga mancante: la gestisce parse, non la si inventa
+        return "\n".join(righe)
 
 
 __all__ = ["SystemCollector", "PORTE_ATTESE", "VERBI"]

@@ -6,15 +6,18 @@ la restituisce strutturata. Non e' il controllo di sicurezza — quello e' il
 ForceCommand ``vspt-ssh-wrapper`` sulla VM — ma e' la meta' client dello stesso
 contratto, e deve combaciarci.
 
-L'unico punto di I/O (aprire la connessione SSH e inviare il verbo) e' lo stub
-``_invia``: nello scaffold solleva ``EsecuzioneLiveNonDisponibile``. Tutto il
-resto — quali verbi esistono, come si legge e valida l'envelope — e'
-implementato e testato.
+L'unico punto di I/O e' ``_invia``, che esegue ``ssh`` con le opzioni di
+hardening (BatchMode, IdentitiesOnly, StrictHostKeyChecking, known_hosts, chiave
+dedicata, ConnectTimeout) e restituisce la prima riga di stdout. Un guasto del
+trasporto (ssh non avviabile, nessun envelope, timeout) solleva
+``TrasportoSshFallito`` — un FALLITO, mai un finto esito. I percorsi di chiave e
+known_hosts vengono dalla config (``scope.toml``), non da un default.
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +27,17 @@ from assess.config import ConfigSsh
 #: Versione del protocollo che questo client parla. Una risposta con un valore
 #: diverso viene rifiutata: il contratto e' esplicito, non si indovina.
 PROTOCOL_VERSION = 1
+
+#: Timeout complessivo del comando SSH (connessione + risposta del wrapper).
+#: La connessione ha il suo ConnectTimeout=10; questo copre l'intera chiamata.
+SSH_TIMEOUT_S = 30
+
+
+class TrasportoSshFallito(RuntimeError):
+    """Il trasporto SSH non ha prodotto una risposta utilizzabile: ssh non
+    avviabile, nessun envelope su stdout, o timeout. Non e'
+    ``EsecuzioneLiveNonDisponibile`` (che il runner tratta come *saltato*): e'
+    un **guasto**, che il runner traduce in check FALLITO. Mai un finto esito."""
 
 #: I verbi ammessi, con il loro check_id. Devono combaciare con
 #: ``ALLOWED_COMMANDS`` del wrapper (PROTOCOL.md ne e' la fonte condivisa).
@@ -97,32 +111,82 @@ class WrapperSsh:
     def destinazione(self) -> str:
         return f"{self._config.user}@{self._config.host}:{self._config.port}"
 
-    def esegui(self, verbo: str) -> Envelope:
-        """Invia un verbo e restituisce l'envelope validato.
+    def riga_grezza(self, verbo: str) -> str:
+        """Invia un verbo e restituisce la **riga grezza** dell'envelope, senza
+        parsarla. Serve a chi deve riunire piu' risposte e passarle a un parser
+        gia' esistente (il collector ``system``), senza farle due volte il
+        giro envelope->oggetto.
 
-        Rifiuta un verbo non ammesso prima ancora di aprire la connessione: il
-        client non spedisce stringhe che il contratto non prevede."""
+        Rifiuta un verbo non ammesso prima di aprire la connessione: il client
+        non spedisce stringhe che il contratto non prevede."""
         if verbo not in VERBI:
             raise ValueError(f"verbo non ammesso dal protocollo: {verbo!r}")
-        return leggi_envelope(self._invia(verbo))
+        return self._invia(verbo)
+
+    def esegui(self, verbo: str) -> Envelope:
+        """Invia un verbo e restituisce l'envelope validato."""
+        return leggi_envelope(self.riga_grezza(verbo))
+
+    def _argv(self, verbo: str) -> list[str]:
+        """Costruisce l'argv di ``ssh``. Il verbo e' un SINGOLO argomento, non
+        una riga di shell: nessuna possibilita' di injection, e il ForceCommand
+        sul server lo confronta comunque per uguaglianza esatta."""
+        cfg = self._config
+        return [
+            "ssh",
+            "-i", cfg.key_path,
+            "-p", str(cfg.port),
+            "-o", "BatchMode=yes",            # mai prompt interattivi
+            "-o", "IdentitiesOnly=yes",       # solo la chiave data, non l'agent
+            "-o", "StrictHostKeyChecking=yes",  # host sconosciuto -> rifiuta
+            "-o", f"UserKnownHostsFile={cfg.known_hosts_path}",
+            "-o", "ConnectTimeout=10",
+            f"{cfg.user}@{cfg.host}",
+            verbo,
+        ]
 
     def _invia(self, verbo: str) -> str:
         """UNICO punto di I/O: apre la connessione SSH, invia il verbo come
-        ``SSH_ORIGINAL_COMMAND`` e restituisce la riga di risposta grezza.
+        ``SSH_ORIGINAL_COMMAND`` e restituisce la **prima riga non vuota** di
+        stdout (l'envelope).
 
-        Nello scaffold non e' implementato: solleva
-        ``EsecuzioneLiveNonDisponibile``. L'implementazione live (Paramiko o
-        ``ssh`` via subprocess) arriva con la VM."""
-        raise EsecuzioneLiveNonDisponibile(
-            f"SSH live non disponibile nello scaffold ({self.destinazione}); "
-            f"verbo: {verbo}"
+        Un ssh non avviabile, uno stdout senza alcuna riga, o un timeout sono
+        **guasti**: si solleva ``TrasportoSshFallito`` (che il runner traduce in
+        FALLITO), mai un finto esito. Se invece il server ha risposto con un
+        envelope (anche di errore, su exit non-zero), quella riga viene
+        restituita: a giudicarla e' ``leggi_envelope``, non il trasporto."""
+        argv = self._argv(verbo)
+        try:
+            esito = subprocess.run(
+                argv, capture_output=True, text=True,
+                timeout=SSH_TIMEOUT_S, check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise TrasportoSshFallito(
+                f"timeout SSH verso {self.destinazione} ({verbo})"
+            ) from exc
+        except OSError as exc:  # ssh assente, ecc.
+            raise TrasportoSshFallito(
+                f"impossibile avviare ssh verso {self.destinazione}: {exc}"
+            ) from exc
+
+        for riga in esito.stdout.splitlines():
+            if riga.strip():
+                return riga
+
+        raise TrasportoSshFallito(
+            f"nessun envelope da {self.destinazione} ({verbo}): "
+            f"exit {esito.returncode}, stderr: {esito.stderr.strip()[:200]!r}"
         )
 
 
 __all__ = [
     "Envelope",
+    "EsecuzioneLiveNonDisponibile",
     "PROTOCOL_VERSION",
     "ProtocolloNonValido",
+    "SSH_TIMEOUT_S",
+    "TrasportoSshFallito",
     "VERBI",
     "WrapperSsh",
     "leggi_envelope",
