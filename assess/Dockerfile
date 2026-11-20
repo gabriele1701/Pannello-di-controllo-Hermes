@@ -72,6 +72,7 @@ WORKDIR /opt/pannello
 # pacchetto: PYTHONPATH punta qui.
 COPY assess/ ./assess/
 COPY templates_nuclei/ ./templates_nuclei/
+RUN nuclei -validate -t templates_nuclei/
 COPY openapi.json ./openapi.json
 
 # Comando `vspt` come wrapper su `python -m assess`. Il console_script
