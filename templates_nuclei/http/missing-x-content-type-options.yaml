@@ -1,0 +1,15 @@
+id: hermes-missing-x-content-type-options
+info:
+  name: Missing X-Content-Type-Options header
+  author: hermes-vspt
+  severity: low
+  description: The HTTP response does not include X-Content-Type-Options nosniff.
+  tags: misconfig,headers,hermes
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers:
+      - type: dsl
+        dsl:
+          - "status_code >= 200 && status_code < 400 && !contains(tolower(all_headers), 'x-content-type-options:')"

@@ -1,0 +1,15 @@
+id: hermes-missing-content-security-policy
+info:
+  name: Missing Content-Security-Policy header
+  author: hermes-vspt
+  severity: low
+  description: The HTTP response does not include a Content-Security-Policy header.
+  tags: misconfig,headers,hermes
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers:
+      - type: dsl
+        dsl:
+          - "status_code >= 200 && status_code < 400 && !contains(tolower(all_headers), 'content-security-policy:')"
