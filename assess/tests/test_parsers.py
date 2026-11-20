@@ -62,8 +62,12 @@ def test_nuclei_comando_usa_gli_url_del_contratto():
     assert "-jsonl" in argv and "-disable-update-check" in argv
     url = [argv[i + 1] for i, a in enumerate(argv) if a == "-u"]
     assert "http://app:8000/api/scope/networks" in url
-    # Il cookie e' un segnaposto, mai un valore reale.
-    assert any("hermes_session=${ASSESS_SESSION}" in a for a in argv)
+    # Il cookie viene aggiunto solo quando il contesto ha una sessione.
+    assert not any("hermes_session=" in a for a in argv)
+    ctx = _ctx()
+    ctx.http = "cookie-di-test"
+    argv_auth = NucleiCollector().costruisci_comando(ctx)
+    assert "Cookie: hermes_session=cookie-di-test" in argv_auth
 
 
 def test_nuclei_parse_match():
