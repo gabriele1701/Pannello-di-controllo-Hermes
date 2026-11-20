@@ -24,8 +24,16 @@ verita'; questo documento e il client la seguono.
 | `system.info`       | SYS-01   | identita' host/OS/kernel/python        |
 | `system.listeners`  | SYS-02   | socket TCP in ascolto                  |
 | `system.processes`  | SYS-03   | metadati dei processi                  |
+| `source.export`     | SRC-01   | sorgente autorizzato come tar.gz       |
 
 Qualunque altra stringa → errore `COMMAND_NOT_ALLOWED` (vedi *Exit*).
+
+`source.export` e' **secco**: nessun parametro dal client. I percorsi sono fissi
+lato server — `<root>/backend` (solo `*.py`), `<root>/requirements.txt`,
+`<root>/pyproject.toml`, con `root` = `/opt/pannello` — e il client non li
+sceglie. E' una **allowlist di contenuto**: entrano solo i `*.py` regolari sotto
+`backend/` (esclusi `static/`, `__pycache__`, `.git`) e i due manifest; symlink
+e file speciali non entrano, e il target non viene mai scritto.
 
 ## Envelope di risposta
 
@@ -80,6 +88,27 @@ indirizzi IPv6 (`[::]:22`) sono normalizzati ad `address`/`port`.
  "count":1,"visibility":"system_wide","limitations":["..."]}
 ```
 
+**SRC-01 — `source.export`**
+
+```json
+{"format":"tar.gz",
+ "archive_b64":"<base64 del tar.gz>",
+ "archive_sha256":"<sha256 esadecimale dell'archivio>",
+ "byte_size":12345,
+ "file_count":42,
+ "files":[{"path":"backend/main.py","sha256":"...","size":1024}],
+ "exported_paths":["backend/ (*.py)","requirements.txt","pyproject.toml"],
+ "target_id":"<hostname>",
+ "timestamp":"<UTC ISO 8601>"}
+```
+
+`archive_b64` e' il tar.gz dell'intero export; `archive_sha256` ne e' lo sha256
+(il client lo riverifica dopo la decodifica, e un mismatch e' un export
+fallito); `files[].sha256` e' l'hash del singolo file prima dell'archiviazione.
+L'export ha dei cap — al massimo ~2000 file / 10 MB complessivi e un timeout —
+che tengono la memoria **bounded**; oltre il limite nessun archivio viene
+prodotto (`EXPORT_LIMIT_EXCEEDED`).
+
 ## Error code
 
 | check  | code                                                        |
@@ -88,6 +117,7 @@ indirizzi IPv6 (`[::]:22`) sono normalizzati ad `address`/`port`.
 | SYS-01 | `SYSTEM_INFO_UNAVAILABLE`                                    |
 | SYS-02 | `LISTENER_COMMAND_FAILED`, `LISTENER_COMMAND_TIMEOUT`, `LISTENER_COMMAND_UNAVAILABLE` |
 | SYS-03 | `PROCESS_COMMAND_FAILED`, `PROCESS_COMMAND_TIMEOUT`, `PROCESS_COMMAND_UNAVAILABLE` |
+| SRC-01 | `EXPORT_LIMIT_EXCEEDED` (oltre i cap file/byte/tempo), `EXPORT_READ_ERROR` (scansione dir fallita o file selezionato illeggibile: mai un archivio parziale dichiarato ok) |
 
 ## Onesta' lato client
 

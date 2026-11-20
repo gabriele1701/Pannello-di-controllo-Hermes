@@ -1,21 +1,27 @@
-"""Collector interno: pip-audit (CVE note sulle dipendenze).
+"""Collector interno: pip-audit sul ``requirements.txt`` recuperato.
 
-Comando reale:
+L'input autorevole e' **``requirements.txt``** (il lock del repo, pin esatti),
+preso dal sorgente esportato via ``source.export`` — non "requirements.lock",
+che nel repo non esiste. Opzionalmente il ``pyproject.toml`` (anch'esso nel
+pacchetto esportato) serve da confronto sulle dipendenze dirette, ma l'input su
+cui pip-audit gira e' ``requirements.txt``.
 
-    pip-audit --format json -r <repo>/requirements.txt
+Flusso live (come semgrep):
 
-Output JSON: ``dependencies[]`` con ``name``, ``version`` e ``vulns[]``
-(``id``, ``fix_versions``, ``description``, ``aliases``). Il DB degli advisory
-si aggiorna in uno step separato ed esplicito, non durante il run confinato.
+1. ``source.export`` → envelope SRC-01;
+2. ``source_ingest`` → estrazione sicura (sha, cap, solo regolari, no traversal);
+3. ``pip-audit --format json -r requirements.txt`` sul file estratto;
+4. provenienza nei metadati; temp dir rimossa.
 
-``parse``: almeno una dipendenza con vulnerabilita' → ``COMPLETATO``; nessuna
-vulnerabilita' su nessuna dipendenza → ``COMPLETATO`` a zero (controllo
-positivo); JSON malformato o struttura inattesa → ``FALLITO``.
+Export/integrita'/estrazione falliti (``IngestFallito``) → check **FALLITO**,
+mai un falso "nessuna CVE". ``parse`` (JSON di pip-audit) e' implementato e
+testato.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from assess.collectors.base import (
     CollectorBase,
@@ -27,17 +33,22 @@ from assess.collectors.base import (
 )
 from assess.model import RawResult, Scope, Source
 
+SORGENTE_ESTRATTO = "<sorgente-estratto>"
+
 
 class PipAuditCollector(CollectorBase):
     name = "pip-audit"
     source = Source.PIP_AUDIT
     scope = Scope.INTERNAL
     requires = frozenset({"ssh"})
-    comando = "pip-audit --format json -r requirements.txt"
+    comando = "source.export -> pip-audit --format json -r <sorgente>/requirements.txt"
+
+    def comando_su(self, radice: Path) -> list[str]:
+        """Comando pip-audit sul requirements.txt estratto."""
+        return ["pip-audit", "--format", "json", "-r", str(radice / "requirements.txt")]
 
     def costruisci_comando(self, ctx: RunContext) -> list[str]:
-        requisiti = str(ctx.repo_root / "requirements.txt")
-        return ["pip-audit", "--format", "json", "-r", requisiti]
+        return self.comando_su(Path(SORGENTE_ESTRATTO))
 
     def parse(self, grezzo: str) -> RawResult:
         try:
@@ -46,8 +57,6 @@ class PipAuditCollector(CollectorBase):
             return raw_fallito(
                 self.source, self.comando, f"output pip-audit non JSON: {exc}"
             )
-        # pip-audit usa {"dependencies": [...]}; alcune versioni danno la lista
-        # diretta. Si accettano entrambe, qualunque altra forma e' malformata.
         if isinstance(dati, dict) and "dependencies" in dati:
             dipendenze = dati["dependencies"]
         elif isinstance(dati, list):
@@ -62,15 +71,15 @@ class PipAuditCollector(CollectorBase):
             return raw_completato(self.source, self.comando, con_vuln)
         return raw_vuoto(
             self.source, self.comando,
-            f"nessuna CVE nota sulle {len(dipendenze)} dipendenze analizzate "
+            f"nessuna CVE nota sulle {len(dipendenze)} dipendenze di requirements.txt "
             "(controllo positivo).",
         )
 
     def _esegui_live(self, ctx: RunContext) -> str:
         raise EsecuzioneLiveNonDisponibile(
-            "pip-audit live non disponibile nello scaffold; comando: "
-            + " ".join(self.costruisci_comando(ctx))
+            "pip-audit live non disponibile nello scaffold; flusso: source.export "
+            "-> ingest sicuro -> " + " ".join(self.comando_su(Path(SORGENTE_ESTRATTO)))
         )
 
 
-__all__ = ["PipAuditCollector"]
+__all__ = ["PipAuditCollector", "SORGENTE_ESTRATTO"]

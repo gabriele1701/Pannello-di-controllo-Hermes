@@ -26,7 +26,10 @@ Implementato e testato **senza VM né target**:
 - **report** (`report/`) — JSON canonico con schema, HTML dai soli dati JSON;
 - **inventario** (`inventory/`) — endpoint e parametri da `openapi.json`;
 - **protocollo SSH a verbi** (`ssh/PROTOCOL.md`, `wrappers/ssh.py`) — il client
-  parla il contratto del wrapper `vspt-ssh-wrapper` (fonte di verità sulla VM);
+  parla il contratto del wrapper `vspt-ssh-wrapper` (fonte di verità sulla VM),
+  ora con `source.export`;
+- **recupero sorgente** (`source_ingest.py`) — ingest sicuro del `tar.gz`
+  esportato (sha, cap, filter data, provenienza) per semgrep/pip-audit;
 - **config di rete** (`net/nftables-assess.nft`, `compose.assess.yaml`) —
   **scritta**, da applicare sulla VM;
 - **runner + CLI** — orchestrazione, metadati, output sequenziale;
@@ -139,20 +142,33 @@ sacrificabile, **mai** un passo del tool.
   read-only). La migrazione è **scritta ma non applicata**: si applica venerdì.
 - **SSH — un protocollo a verbi, la restrizione sta sul server.** Non comandi
   shell: il client (`wrappers/ssh.py`) invia un **verbo logico**
-  (`system.info`, `system.listeners`, `system.processes`) e riceve **un
-  envelope JSON** su una riga. Il controllo di sicurezza è il ForceCommand
-  `assess/ssh/vspt-ssh-wrapper` sulla VM: `sshd` lo invoca per ogni
+  (`system.info`, `system.listeners`, `system.processes`, `source.export`) e
+  riceve **un envelope JSON** su una riga. Il controllo di sicurezza è il
+  ForceCommand `assess/ssh/vspt-ssh-wrapper` sulla VM: `sshd` lo invoca per ogni
   connessione, legge `$SSH_ORIGINAL_COMMAND` come stringa-verbo esatta (mai
   shell), la confronta con l'allowlist dei verbi e risponde. `system.processes;
   id` non è il verbo `system.processes`: è un'altra stringa, e viene negata con
   `COMMAND_NOT_ALLOWED` (exit 126). Il contratto completo è in
   **`assess/ssh/PROTOCOL.md`**.
+- **Recupero del sorgente — `source.export` + ingest sicuro.** `semgrep` e
+  `pip-audit` non leggono un sorgente "qualsiasi": lo ottengono dal target col
+  verbo `source.export`, che impacchetta in `tar.gz` **solo** i `*.py` di
+  `backend/` e i manifest `requirements.txt`/`pyproject.toml` (allowlist di
+  contenuto; percorsi fissi lato server; symlink, `static/`, `.pyc` esclusi;
+  cap su file/byte/tempo). Il client (`source_ingest.py`) **non si fida**
+  dell'archivio: verifica `archive_sha256`, estrae in una temp dir con
+  `tarfile` `filter="data"` applicando cap cumulativi e rifiutando i membri non
+  regolari (niente path traversal, niente symlink, niente decompression bomb),
+  registra la **provenienza** (sha, per-file, target, timestamp) nei metadati e
+  pulisce la temp dir. Se export, integrità o estrazione falliscono, i due
+  check sono **FALLITO/NOT_RUN**, mai un falso "pulito".
 
 ### SSH ristretto: installazione (sulla VM, venerdì)
 
-`assess/ssh/vspt-ssh-wrapper` nel repo è **byte-identico** a quello installato
-e testato sulla VM: la VM è la fonte di verità, il repo la segue. Non si
-modifica da qui. Installazione:
+`assess/ssh/vspt-ssh-wrapper` nel repo resta la **fonte unica**: va tenuto
+byte-identico a quello sulla VM. Questo giro aggiunge il verbo `source.export`,
+quindi il wrapper **va reinstallato sulla VM** (stesso file, non una copia
+divergente) perché il nuovo verbo sia servito. Installazione:
 
 ```bash
 # 1) utente non privilegiato, nessun sudo
@@ -166,9 +182,9 @@ restrict,command="/opt/pannello/assess/ssh/vspt-ssh-wrapper" ssh-ed25519 AAAA...
 
 `restrict` toglie port/agent/X11-forwarding, pty e user-rc; `command="…"`
 (ForceCommand della chiave) impone il wrapper a ogni connessione, qualunque
-cosa il client chieda. Il wrapper risponde solo ai tre verbi, in sola lettura e
-senza privilegi; ogni altra stringa è negata. Il client-side non c'entra con
-questa garanzia: è `sshd` ad applicarla.
+cosa il client chieda. Il wrapper risponde solo ai verbi dell'allowlist, in
+sola lettura e senza privilegi; ogni altra stringa è negata. Il client-side non
+c'entra con questa garanzia: è `sshd` ad applicarla.
 
 ## Il report
 
@@ -218,10 +234,12 @@ standard library.
 python -m pytest assess/tests/ -q
 ```
 
-110 test su fixture (`tests/fixtures/`): nessuna rete, nessun target. Coprono i
+125 test su fixture (`tests/fixtures/`): nessuna rete, nessun target. Coprono i
 parser di tutti i collector (risultati, zero, malformato, condizione non
 valida), il contratto SSH (client + `vspt-ssh-wrapper` invocato come
-subprocess), lo scope guard, il modello, la normalizzazione e il report.
+subprocess), `source.export` e l'**ingest sicuro** (archivio benigno estratto;
+path traversal, symlink, hardlink, bomb/oversize, troppi file, sha mismatch
+tutti rifiutati), lo scope guard, il modello, la normalizzazione e il report.
 Richiedono `jsonschema` (già in `pyproject [dev]`).
 
 La CI del pannello esegue `tests/` (la suite del backend), non `assess/tests/`:

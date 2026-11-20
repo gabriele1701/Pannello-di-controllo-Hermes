@@ -31,6 +31,7 @@ VERBI: dict[str, str] = {
     "system.info": "SYS-01",
     "system.listeners": "SYS-02",
     "system.processes": "SYS-03",
+    "source.export": "SRC-01",
 }
 
 
