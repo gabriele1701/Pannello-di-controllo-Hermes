@@ -7,7 +7,7 @@ normalizzati e rischio = impatto × probabilità.
 > Cugino, non fratello, di `hermes-core/bin/hermes-assess`. Quello verifica le
 > difese del *server MCP*; questo valuta la *web application* del pannello.
 
-Questo documento confluirà nel README principale alla consegna.
+Questo documento contiene la procedura operativa e i vincoli di esecuzione del VSPT.
 
 ---
 
@@ -31,8 +31,11 @@ Implementato e testato **senza VM né target**:
 - **recupero sorgente** (`source_ingest.py`) — ingest sicuro del `tar.gz`
   esportato (sha, cap, filter data, provenienza) per semgrep/pip-audit;
 - **trasporto SSH live del collector `system`** (`wrappers/ssh.py`,
-  `collectors/internal_system.py`, `cli.py`) — il primo collector che va dal
-  vivo: la CLI costruisce il canale SSH dalla config e lo passa al collector;
+  `collectors/internal_system.py`, `cli.py`) — la CLI costruisce il canale SSH
+  dalla config e lo passa al collector;
+- **collector Nuclei live** (`collectors/external_nuclei.py`,
+  `wrappers/http_session.py`) — login operatore, cookie in memoria, scan HTTP
+  autenticato sugli URL derivati da `openapi.json`, template locali e timeout;
 - **config di rete per il primo test** (`net/nftables-assess.nft`,
   `net/applica-nftables.sh`, `compose.assess.yaml`) — override con bind mount
   dei secret, subnet fissa per la rete `uscita`, e regole nft **host-side** per
