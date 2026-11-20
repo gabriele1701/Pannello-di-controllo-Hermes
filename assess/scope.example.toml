@@ -44,8 +44,11 @@ dsn_env = "ASSESS_DB_DSN"
 host = "DA_COMPILARE"
 user = "assess"
 port = 22
-# Percorso della chiave montata come secret (NON la chiave).
-key_path = "DA_COMPILARE"
+# Percorsi DENTRO il container (non nel repo): la chiave privata montata come
+# secret e il known_hosts che fissa l'identita' dell'host (per
+# StrictHostKeyChecking=yes). Li monta il compose/la VM, qui si dichiarano solo.
+key_path = "/run/secrets/scanner_ed25519"
+known_hosts_path = "/run/secrets/known_hosts"
 
 # Directory di output del report (JSON + HTML).
 out_dir = "assess/out"
