@@ -1,27 +1,24 @@
-"""Collector interno: system (porte, processi, servizi, permessi) via SSH.
+"""Collector interno: system — via il protocollo a verbi del wrapper SSH.
 
-Comandi reali, tutti read-only, inviati dal ``WrapperSsh`` e autorizzati dal
-``ForceCommand`` validatore sul server (``assess/ssh/hermes-assess-ssh``):
+Non piu' comandi shell: il collector invia i **verbi** del contratto
+(``PROTOCOL.md``) attraverso il wrapper client (``assess/wrappers/ssh.py``) e
+interpreta gli **envelope** JSON che tornano. Le attestazioni sulle porte
+vengono dai campi **strutturati** di ``data.listeners`` — niente regex su testo.
 
-    ss -tlnp
-    ps aux
-    systemctl list-units --type=service --state=running
-    docker ps --format '{{.Names}} {{.Status}} {{.Ports}}'
-    ls -la <percorsi sensibili>
+I tre verbi:
 
-``parse`` qui interpreta l'output di ``ss -tlnp`` — le porte in ascolto, il
-controllo piu' rivelatore — e ne ricava attestazioni: le porte attese
-(``app`` 8000, ``db`` 5432) sono conformi, ogni altra porta in ascolto e' una
-deviazione (un servizio di troppo esposto).
+* ``system.listeners`` (SYS-02) e' il check portante: dai socket in ascolto
+  ricava le attestazioni (attese ``app:8000`` e ``db:5432``, ogni altra porta e'
+  una deviazione). Un ``status:"error"`` qui e' un check **FALLITO**, con
+  l'``error.code`` nella nota — non un vuoto. ``ok`` con lista vuota e'
+  ``COMPLETATO`` a zero sulle porte (controllo positivo).
+* ``system.info`` (SYS-01) e ``system.processes`` (SYS-03) danno **attestazioni
+  di contesto** (identita' host, numero di processi), non finding inventati.
 
-Casi: output non riconoscibile → ``FALLITO``; header presente ma nessuna porta
-in ascolto → ``COMPLETATO`` a zero (nota); porte in ascolto → ``COMPLETATO``
-con le attestazioni.
+Nello scaffold ``_esegui_live`` e' l'unico stub: senza VM non c'e' canale SSH.
 """
 
 from __future__ import annotations
-
-import re
 
 from assess.collectors.base import (
     CollectorBase,
@@ -29,28 +26,15 @@ from assess.collectors.base import (
     RunContext,
     raw_completato,
     raw_fallito,
-    raw_vuoto,
 )
 from assess.model import RawResult, Scope, Source
+from assess.wrappers.ssh import Envelope, ProtocolloNonValido, leggi_envelope
 
 #: Porte attese in ascolto: l'app e il database del compose.
 PORTE_ATTESE = {8000: "app (uvicorn)", 5432: "db (postgres)"}
 
-_COMANDI = (
-    "ss -tlnp",
-    "ps aux",
-    "systemctl list-units --type=service --state=running",
-    "docker ps --format '{{.Names}} {{.Status}} {{.Ports}}'",
-)
-
-#: Riga di ss: cattura la colonna Local Address:Port dopo lo stato LISTEN.
-_RE_LISTEN = re.compile(r"^LISTEN\s+\d+\s+\d+\s+(\S+)", re.MULTILINE)
-
-
-def _porta(local_addr_port: str) -> int | None:
-    """Estrae la porta da 'indirizzo:porta' (gestisce IPv6 [::]:8000)."""
-    _, _, coda = local_addr_port.rpartition(":")
-    return int(coda) if coda.isdigit() else None
+#: I verbi inviati, nell'ordine. Combaciano con l'allowlist del wrapper.
+VERBI = ("system.info", "system.listeners", "system.processes")
 
 
 class SystemCollector(CollectorBase):
@@ -58,43 +42,27 @@ class SystemCollector(CollectorBase):
     source = Source.SYSTEM
     scope = Scope.INTERNAL
     requires = frozenset({"ssh"})
-    comando = "ss -tlnp ; ps aux ; systemctl list-units --state=running ; docker ps"
+    comando = "ssh verbi: system.info ; system.listeners ; system.processes"
 
     def costruisci_comando(self, ctx: RunContext) -> list[str]:
-        # L'elenco dei comandi diagnostici che il collector invia via SSH.
-        return list(_COMANDI)
+        # Non comandi shell: i verbi logici del protocollo.
+        return list(VERBI)
 
-    def parse(self, grezzo: str) -> RawResult:
-        prima_riga = grezzo.splitlines()[0] if grezzo.strip() else ""
-        riconosciuto = (
-            "LISTEN" in grezzo or "Local Address" in grezzo or "State" in prima_riga
-        )
-        indirizzi = _RE_LISTEN.findall(grezzo)
-        if not indirizzi:
-            if not riconosciuto:
-                return raw_fallito(
-                    self.source, self.comando,
-                    "output di 'ss -tlnp' non riconoscibile: ne' intestazione ne' "
-                    "righe LISTEN (comando non eseguito o troncato).",
-                )
-            return raw_vuoto(
-                self.source, self.comando,
-                "nessuna porta TCP in ascolto rilevata.",
-            )
+    # -- attestazioni per verbo -------------------------------------------- #
 
+    def _attestazioni_porte(self, env: Envelope) -> list[dict]:
         att: list[dict] = []
-        for indirizzo in indirizzi:
-            porta = _porta(indirizzo)
-            if porta is None:
-                continue
+        for voce in (env.data or {}).get("listeners", []):
+            porta = voce.get("port")
+            address = voce.get("address", "?")
             attesa = porta in PORTE_ATTESE
             att.append({
                 "controllo": f"porta {porta} in ascolto",
-                "bersaglio": indirizzo,
+                "bersaglio": f"{address}:{porta}",
                 "atteso": "solo app:8000 e db:5432",
-                "osservato": f"{indirizzo} ({PORTE_ATTESE.get(porta, 'servizio inatteso')})",
+                "osservato": f"{address}:{porta} ({PORTE_ATTESE.get(porta, 'servizio inatteso')})",
                 "conforme": attesa,
-                "references": ["compose.assess.yaml"],
+                "references": ["PROTOCOL.md SYS-02", "compose.assess.yaml"],
                 "impact": 3,
                 "probability": 3,
                 "recommendation": (
@@ -102,17 +70,108 @@ class SystemCollector(CollectorBase):
                     "Chiudere o non esporre questa porta: non e' app ne' db."
                 ),
             })
-        nonconformi = sum(1 for a in att if not a["conforme"])
-        return raw_completato(
-            self.source, self.comando, att,
-            f"{len(att)} porte in ascolto, {nonconformi} inattese.",
+        return att
+
+    @staticmethod
+    def _attestazione_info(env: Envelope) -> dict:
+        d = env.data or {}
+        osservato = (
+            f"{d.get('os_pretty_name') or d.get('os')}, "
+            f"kernel {d.get('kernel')}, python {d.get('python_version')}"
         )
+        return {
+            "controllo": "identita' dell'host (contesto)",
+            "bersaglio": d.get("hostname", "?"),
+            "atteso": "ambiente demo noto",
+            "osservato": osservato,
+            "conforme": True,
+            "references": ["PROTOCOL.md SYS-01"],
+            "impact": 1,
+            "probability": 1,
+            "recommendation": "Contesto, nessuna azione.",
+        }
+
+    @staticmethod
+    def _attestazione_processi(env: Envelope) -> dict:
+        d = env.data or {}
+        return {
+            "controllo": "processi visibili (contesto)",
+            "bersaglio": "host",
+            "atteso": "inventario di contesto",
+            "osservato": f"{d.get('count', 0)} processi, visibilita' {d.get('visibility', '?')}",
+            "conforme": True,
+            "references": ["PROTOCOL.md SYS-03"],
+            "impact": 1,
+            "probability": 1,
+            "recommendation": "Contesto, nessuna azione.",
+        }
+
+    def parse(self, grezzo: str) -> RawResult:
+        per_check: dict[str, Envelope] = {}
+        malformate = 0
+        for riga in grezzo.splitlines():
+            if not riga.strip():
+                continue
+            try:
+                env = leggi_envelope(riga)
+            except ProtocolloNonValido:
+                malformate += 1
+                continue
+            per_check[env.check_id] = env
+
+        if not per_check:
+            return raw_fallito(
+                self.source, self.comando,
+                "nessun envelope valido nelle risposte del wrapper "
+                f"({malformate} righe malformate).",
+            )
+
+        # SYS-02 e' il check portante: senza, o in errore, il collector fallisce.
+        sys02 = per_check.get("SYS-02")
+        if sys02 is None:
+            return raw_fallito(
+                self.source, self.comando,
+                "nessuna risposta per system.listeners (SYS-02): check portante "
+                "assente.",
+            )
+        if not sys02.ok:
+            return raw_fallito(
+                self.source, self.comando,
+                f"system.listeners fallito: {sys02.codice_errore}.",
+            )
+
+        porte = self._attestazioni_porte(sys02)
+        attestazioni = list(porte)
+
+        # Contesto: info e processi. Un loro errore non fa fallire il collector,
+        # ma non diventa un'attestazione conforme: resta nelle note.
+        note: list[str] = []
+        sys01 = per_check.get("SYS-01")
+        if sys01 is not None:
+            if sys01.ok:
+                attestazioni.append(self._attestazione_info(sys01))
+            else:
+                note.append(f"system.info non disponibile: {sys01.codice_errore}")
+        sys03 = per_check.get("SYS-03")
+        if sys03 is not None:
+            if sys03.ok:
+                attestazioni.append(self._attestazione_processi(sys03))
+            else:
+                note.append(f"system.processes non disponibile: {sys03.codice_errore}")
+
+        inattese = sum(1 for a in porte if not a["conforme"])
+        if porte:
+            nota = f"{len(porte)} porte in ascolto, {inattese} inattese."
+        else:
+            nota = "nessuna porta in ascolto osservata (controllo positivo)."
+        if note:
+            nota += " " + " ; ".join(note)
+        return raw_completato(self.source, self.comando, attestazioni, nota)
 
     def _esegui_live(self, ctx: RunContext) -> str:
         raise EsecuzioneLiveNonDisponibile(
-            "system live non disponibile nello scaffold; comandi: "
-            + " ; ".join(_COMANDI)
+            "system live non disponibile nello scaffold; verbi: " + " ; ".join(VERBI)
         )
 
 
-__all__ = ["SystemCollector", "PORTE_ATTESE"]
+__all__ = ["SystemCollector", "PORTE_ATTESE", "VERBI"]

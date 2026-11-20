@@ -1,0 +1,1 @@
+{"protocol_version":1,"check_id":"SYS-01","status":"ok","data":{"hostname":"vm","os":"ubuntu","os_version":"24.04","os_pretty_name":"Ubuntu 24.04.5 LTS","kernel":"6.18.44-fc-v653","architecture":"x86_64","python_version":"3.13.18"},"error":null}

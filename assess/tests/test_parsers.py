@@ -207,33 +207,9 @@ def test_postgres_senza_ruolo_app_e_fallito():
     assert raw.esito is EsitoCheck.FALLITO
 
 
-# --------------------------------------------------------------------------- #
-# system
-# --------------------------------------------------------------------------- #
-
-
-def test_system_porta_inattesa_e_deviazione():
-    raw = SystemCollector().parse(_testo("system_ss.txt"))
-    assert raw.esito is EsitoCheck.COMPLETATO
-    inattese = [a for a in raw.elementi if not a["conforme"]]
-    assert len(inattese) == 1 and "6379" in inattese[0]["bersaglio"]
-
-
-def test_system_solo_porte_attese_tutto_conforme():
-    raw = SystemCollector().parse(_testo("system_ss_pulito.txt"))
-    assert raw.esito is EsitoCheck.COMPLETATO
-    assert all(a["conforme"] for a in raw.elementi)
-
-
-def test_system_nessuna_porta_e_zero():
-    raw = SystemCollector().parse(
-        "State   Recv-Q  Send-Q   Local Address:Port   Peer Address:Port"
-    )
-    assert raw.esito is EsitoCheck.COMPLETATO and raw.elementi == []
-
-
-def test_system_malformato_e_fallito():
-    assert SystemCollector().parse("boh").esito is EsitoCheck.FALLITO
+# Il collector system e' basato sul protocollo a verbi del wrapper SSH: i suoi
+# test (parsing degli envelope, wrapper come subprocess) stanno in
+# test_ssh_contract.py.
 
 
 # --------------------------------------------------------------------------- #
