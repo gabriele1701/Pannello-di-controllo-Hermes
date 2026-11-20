@@ -118,7 +118,6 @@ def comando_run(args: argparse.Namespace) -> int:
 
     ctx = RunContext(
         config=cfg,
-        config=cfg,
         repo_root=repo_root,
         target=target,
         base_url=cfg.target.base_url,
