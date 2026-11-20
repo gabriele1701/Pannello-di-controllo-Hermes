@@ -1,25 +1,27 @@
-"""Collector interno: semgrep (analisi statica del sorgente).
+"""Collector interno: semgrep sul sorgente recuperato via ``source.export``.
 
-Comando reale:
+Il sorgente non si legge "da qualche parte": arriva dal target con un canale
+autenticato e verificato. Il flusso live e':
 
-    semgrep scan --json --no-git-ignore \\
-            --config p/python --config p/owasp-top-ten \\
-            <repo>/backend
+1. ``ctx.ssh.esegui("source.export")`` → envelope SRC-01 (tar.gz + sha);
+2. ``source_ingest.sorgente_da_envelope`` → estrazione **sicura** in una temp
+   dir (sha verificato, cap, solo file regolari, niente traversal);
+3. ``semgrep scan --json`` sulla ``backend/`` estratta;
+4. la **provenienza** dell'ingest finisce nei metadati del run;
+5. la temp dir viene rimossa.
 
-* Ruleset OWASP/Python **bundled** (offline).
-* Sorgente ``backend/`` prelevato dalla macchina via SSH ristretto.
-* Output JSON: ``results[]`` (``check_id``, ``path``, ``start.line``,
-  ``extra.message``, ``extra.severity``, ``extra.metadata.cwe``) ed ``errors[]``.
+Se export, integrita' o estrazione falliscono (``IngestFallito``), il check e'
+**FALLITO** — mai un falso "pulito": un sorgente che non e' arrivato integro non
+e' un sorgente senza problemi.
 
-``parse``: risultati presenti → ``COMPLETATO``; nessun risultato e nessun errore
-→ ``COMPLETATO`` a zero (controllo positivo); nessun risultato ma con errori di
-scansione → ``FALLITO`` (uno scan non riuscito non e' un "pulito"); JSON
-malformato → ``FALLITO``.
+Nello scaffold ``_esegui_live`` e' l'unico stub. ``parse`` (output JSON di
+semgrep) e' implementato e testato come prima.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from assess.collectors.base import (
     CollectorBase,
@@ -31,6 +33,10 @@ from assess.collectors.base import (
 )
 from assess.model import RawResult, Scope, Source
 
+#: Segnaposto del percorso: la radice reale e' la temp dir dell'ingest, nota
+#: solo a runtime dopo ``source.export``.
+SORGENTE_ESTRATTO = "<sorgente-estratto>"
+
 
 class SemgrepCollector(CollectorBase):
     name = "semgrep"
@@ -38,17 +44,21 @@ class SemgrepCollector(CollectorBase):
     scope = Scope.INTERNAL
     requires = frozenset({"ssh"})
     comando = (
-        "semgrep scan --json --no-git-ignore "
-        "--config p/python --config p/owasp-top-ten backend/"
+        "source.export -> semgrep scan --json --no-git-ignore "
+        "--config p/python --config p/owasp-top-ten <sorgente>/backend"
     )
 
-    def costruisci_comando(self, ctx: RunContext) -> list[str]:
-        sorgente = str(ctx.repo_root / "backend")
+    def comando_su(self, radice: Path) -> list[str]:
+        """Comando semgrep sulla radice estratta (``radice/backend``)."""
         return [
             "semgrep", "scan", "--json", "--no-git-ignore",
             "--config", "p/python", "--config", "p/owasp-top-ten",
-            sorgente,
+            str(radice / "backend"),
         ]
+
+    def costruisci_comando(self, ctx: RunContext) -> list[str]:
+        # Il percorso reale e' la temp dir dell'ingest, nota solo a runtime.
+        return self.comando_su(Path(SORGENTE_ESTRATTO))
 
     def parse(self, grezzo: str) -> RawResult:
         try:
@@ -79,10 +89,12 @@ class SemgrepCollector(CollectorBase):
         )
 
     def _esegui_live(self, ctx: RunContext) -> str:
+        # Live: source.export -> ingest sicuro -> semgrep sulla backend/ estratta,
+        # con la provenienza nei metadati e IngestFallito -> check FALLITO.
         raise EsecuzioneLiveNonDisponibile(
-            "semgrep live non disponibile nello scaffold; comando: "
-            + " ".join(self.costruisci_comando(ctx))
+            "semgrep live non disponibile nello scaffold; flusso: source.export "
+            "-> ingest sicuro -> " + " ".join(self.comando_su(Path(SORGENTE_ESTRATTO)))
         )
 
 
-__all__ = ["SemgrepCollector"]
+__all__ = ["SemgrepCollector", "SORGENTE_ESTRATTO"]

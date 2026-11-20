@@ -1,11 +1,18 @@
 #!/usr/bin/python3
 
+import base64
+import datetime
+import hashlib
+import io
 import json
 import os
 import platform
 import socket
+import stat
 import sys
 import subprocess
+import tarfile
+import time
 from pathlib import Path
 
 PROTOCOL_VERSION = 1
@@ -17,7 +24,22 @@ ALLOWED_COMMANDS = {
     "system.info": "SYS-01",
     "system.listeners": "SYS-02",
     "system.processes": "SYS-03",
+    "source.export": "SRC-01",
 }
+
+# Radice del sorgente e limiti dell'export. Sono configurazione DEL SERVER
+# (l'ambiente del ForceCommand), non parametri del client: SSH_ORIGINAL_COMMAND
+# resta l'unico input del client, e "source.export" e' secco. I default sono
+# fissi; le variabili servono al deploy e ai test, mai al client.
+SOURCE_ROOT = os.environ.get("VSPT_SOURCE_ROOT", "/opt/pannello")
+MAX_FILES = int(os.environ.get("VSPT_MAX_FILES", "2000"))
+MAX_TOTAL_BYTES = int(os.environ.get("VSPT_MAX_TOTAL_BYTES", str(10 * 1024 * 1024)))
+EXPORT_TIMEOUT = float(os.environ.get("VSPT_EXPORT_TIMEOUT", "30"))
+
+# Directory mai esportate, ovunque compaiano sotto backend/.
+_ESCLUSE = {"static", "__pycache__", ".git"}
+# I due manifest ammessi oltre ai *.py di backend/.
+_MANIFEST = ("requirements.txt", "pyproject.toml")
 
 
 def emit(check_id, status, data=None, error=None):
@@ -264,6 +286,107 @@ def system_processes():
 
 
 
+def _sha256(blob):
+    return hashlib.sha256(blob).hexdigest()
+
+
+def collect_source_files(root):
+    """Allowlist di CONTENUTO: solo i *.py regolari sotto backend/ (esclusi
+    static/, __pycache__, .git) piu' i due manifest, come coppie (rel, full).
+
+    os.walk con followlinks=False e os.lstat + S_ISREG: i symlink e i file
+    speciali non entrano. Niente scrittura sul target: sola enumerazione e
+    lettura."""
+    root = os.path.abspath(root)
+    selezionati = []
+
+    backend = os.path.join(root, "backend")
+    for dirpath, dirnames, filenames in os.walk(backend, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in _ESCLUSE]
+        for nome in filenames:
+            if not nome.endswith(".py"):
+                continue
+            full = os.path.join(dirpath, nome)
+            try:
+                info = os.lstat(full)
+            except OSError:
+                continue
+            if not stat.S_ISREG(info.st_mode):  # niente symlink/speciali
+                continue
+            selezionati.append((os.path.relpath(full, root), full))
+
+    for manifest in _MANIFEST:
+        full = os.path.join(root, manifest)
+        try:
+            info = os.lstat(full)
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode):
+            selezionati.append((manifest, full))
+
+    selezionati.sort()
+    return selezionati
+
+
+def source_export():
+    """Esporta il sorgente autorizzato come tar.gz in un envelope. Percorsi
+    fissi lato server, cap su file/byte/tempo, solo letture di file regolari."""
+    check_id = "SRC-01"
+    try:
+        files = collect_source_files(SOURCE_ROOT)
+
+        inizio = time.monotonic()
+        totale = 0
+        membri = []  # (rel, data, sha)
+
+        for rel, full in files:
+            if len(membri) >= MAX_FILES:
+                emit(check_id, "error", error={"code": "EXPORT_LIMIT_EXCEEDED"})
+                return EXIT_ERROR
+            if time.monotonic() - inizio > EXPORT_TIMEOUT:
+                emit(check_id, "error", error={"code": "EXPORT_LIMIT_EXCEEDED"})
+                return EXIT_ERROR
+            with open(full, "rb") as handle:
+                blob = handle.read()
+            totale += len(blob)
+            if totale > MAX_TOTAL_BYTES:
+                emit(check_id, "error", error={"code": "EXPORT_LIMIT_EXCEEDED"})
+                return EXIT_ERROR
+            membri.append((rel, blob, _sha256(blob)))
+
+        # Archivio costruito a mano, un TarInfo regolare per file: niente
+        # tarfile.add (che seguirebbe link e copierebbe metadati del filesystem).
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+            for rel, blob, _ in membri:
+                info = tarfile.TarInfo(name=rel)
+                info.size = len(blob)
+                info.mtime = 0
+                info.mode = 0o644
+                info.type = tarfile.REGTYPE
+                tar.addfile(info, io.BytesIO(blob))
+        archivio = buffer.getvalue()
+
+        data = {
+            "format": "tar.gz",
+            "archive_b64": base64.b64encode(archivio).decode("ascii"),
+            "archive_sha256": _sha256(archivio),
+            "byte_size": len(archivio),
+            "file_count": len(membri),
+            "files": [{"path": rel, "sha256": sha, "size": len(blob)}
+                      for rel, blob, sha in membri],
+            "exported_paths": ["backend/ (*.py)", "requirements.txt", "pyproject.toml"],
+            "target_id": socket.gethostname(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        emit(check_id, "ok", data=data)
+        return EXIT_OK
+
+    except OSError:
+        emit(check_id, "error", error={"code": "EXPORT_UNAVAILABLE"})
+        return EXIT_ERROR
+
+
 def main():
     # OpenSSH sets this variable to the original client command.
     # Never parse it as shell input.
@@ -287,6 +410,9 @@ def main():
 
     if original_command == "system.processes":
         return system_processes()
+
+    if original_command == "source.export":
+        return source_export()
 
     emit(
         "UNKNOWN",
