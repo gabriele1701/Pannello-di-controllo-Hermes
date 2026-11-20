@@ -202,24 +202,33 @@ Prerequisiti:
 - credenziali dell'operatore disponibili solo nell'ambiente, non nel file di
   scope o nel repository.
 
-Dalla radice del repository:
+Dalla radice del repository, sulla VM:
 
 ```bash
-# Recupera la password dell'operatore dal .env senza stamparla nel terminale.
-export ASSESS_TARGET_PASSWORD="$(sed -n 's/^HERMES_ADMIN_PASSWORD=//p' .env)"
+# La subnet deve coincidere con quella configurata nelle regole nftables.
+export VSPT_SUBNET_USCITA=10.77.42.0/24
+
+# .env può essere root:root con permessi 600: leggi la password con sudo
+# senza stamparla a video e senza inserirla nel repository.
+export ASSESS_TARGET_PASSWORD="$(sudo sed -n 's/^HERMES_ADMIN_PASSWORD=//p' .env)"
+test -n "$ASSESS_TARGET_PASSWORD" || { echo "Password operatore non trovata"; exit 1; }
 
 # Avvia app e database usando anche la topologia di rete dell'assessor.
-VSPT_SUBNET_USCITA=10.77.42.0/24 docker compose \
+sudo env VSPT_SUBNET_USCITA="$VSPT_SUBNET_USCITA" docker compose \
   -f compose.yaml -f assess/compose.assess.yaml up -d --build app db
 
 # Costruisce lo scanner con i template offline inclusi e validati nel build.
-VSPT_SUBNET_USCITA=10.77.42.0/24 docker compose \
+sudo env VSPT_SUBNET_USCITA="$VSPT_SUBNET_USCITA" docker compose \
   -f compose.yaml -f assess/compose.assess.yaml --profile assess build scanner
 
 # Esegue soltanto Nuclei e genera assess/out/report.json + report.html.
-VSPT_SUBNET_USCITA=10.77.42.0/24 docker compose \
+sudo env VSPT_SUBNET_USCITA="$VSPT_SUBNET_USCITA" \
+  ASSESS_TARGET_PASSWORD="$ASSESS_TARGET_PASSWORD" docker compose \
   -f compose.yaml -f assess/compose.assess.yaml --profile assess \
   run --rm scanner run --config /scope/scope.toml --only nuclei
+
+# Rimuove la password dalla sessione corrente.
+unset ASSESS_TARGET_PASSWORD
 ```
 
 Il self-check di egress viene eseguito **prima del login HTTP**. Se una
@@ -237,6 +246,7 @@ Per consultare il risultato:
 Un run senza match significa soltanto che i template eseguiti non hanno
 rilevato le condizioni cercate sugli endpoint raggiunti. Non equivale a una
 certificazione di assenza di vulnerabilità.
+
 
 ### Stato dei controlli
 
