@@ -13,7 +13,7 @@ Questo documento contiene la procedura operativa e i vincoli di esecuzione del V
 
 ## Stato
 
-Implementato e testato **senza VM né target**:
+Implementazione e test automatici **senza target reale** (il run live su VM è ancora da verificare):
 
 - **modello** (`model.py`) e **rischio** (`risk.py`) — il finding canonico e il
   calcolo I×P;
@@ -21,7 +21,8 @@ Implementato e testato **senza VM né target**:
 - **config** (`config.py`) — loader `scope.toml` fail-closed;
 - **parse layer dei collector** (`collectors/`) — per ciascuno, costruzione del
   comando e trasformazione output-grezzo → `RawResult`, implementati e coperti.
-  L'**unico** stub è `_esegui_live` (I/O subprocess/SSH/psycopg), isolato;
+  i parser degli altri collector sono coperti da fixture; SQLmap, Semgrep,
+  pip-audit e PostgreSQL non hanno ancora l'I/O live collegato;
 - **normalizzazione** (`normalize.py`) — `RawResult` → finding, con dedup;
 - **report** (`report/`) — JSON canonico con schema, HTML dai soli dati JSON;
 - **inventario** (`inventory/`) — endpoint e parametri da `openapi.json`;
@@ -76,7 +77,8 @@ JSON), `update-feeds` (aggiornamento template/CVE — **separato**, esce in rete
 non necessario a un run confinato).
 
 `run` accetta `--only <collector>…` per eseguire un **sottoinsieme**: `vspt run
---only system` esegue solo `system`; gli altri non vengono nemmeno tentati. Un
+--only nuclei` esegue solo Nuclei; `vspt run --only system` esegue solo `system`;
+gli altri non vengono nemmeno tentati. Un
 nome sconosciuto e' un errore (fail-closed), non un run silenziosamente ridotto.
 
 ## Configurazione: `scope.toml`
