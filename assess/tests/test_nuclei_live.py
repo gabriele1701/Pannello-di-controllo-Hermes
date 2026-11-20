@@ -115,6 +115,6 @@ def test_nuclei_live_esegue_solo_template_locali(monkeypatch):
     assert "-disable-update-check" in argv and "-duc" in argv
     assert "-t" in argv and str(ctx.repo_root / "templates_nuclei") in argv
     assert "Cookie: hermes_session=cookie.test" in argv
-    assert chiamata["kwargs"]["shell"] is not True
+    assert chiamata["kwargs"].get("shell", False) is False
     assert chiamata["kwargs"]["timeout"] == 600
     assert chiamata["kwargs"]["cwd"] == ctx.repo_root
