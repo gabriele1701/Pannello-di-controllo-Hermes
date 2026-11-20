@@ -13,7 +13,7 @@ Questo documento contiene la procedura operativa e i vincoli di esecuzione del V
 
 ## Stato
 
-Implementazione e test automatici **senza target reale** (il run live su VM è ancora da verificare):
+Implementazione e test automatici completati; il collector **Nuclei è stato eseguito live** sull'istanza demo in VM. Gli altri collector mantengono lo stato indicato più avanti e non vanno considerati live solo perché i relativi parser sono testati:
 
 - **modello** (`model.py`) e **rischio** (`risk.py`) — il finding canonico e il
   calcolo I×P;
@@ -37,25 +37,24 @@ Implementazione e test automatici **senza target reale** (il run live su VM è a
 - **collector Nuclei live** (`collectors/external_nuclei.py`,
   `wrappers/http_session.py`) — login operatore, cookie in memoria, scan HTTP
   autenticato sugli URL derivati da `openapi.json`, template locali e timeout;
-- **config di rete per il primo test** (`net/nftables-assess.nft`,
-  `net/applica-nftables.sh`, `compose.assess.yaml`) — override con bind mount
-  dei secret, subnet fissa per la rete `uscita`, e regole nft **host-side** per
-  subnet; **scritte, da applicare sulla VM**;
+- **confinamento di rete** (`net/nftables-assess.nft`,
+  `net/applica-nftables.sh`, `compose.assess.yaml`) — rete Docker `interna`
+  senza gateway per app/db/scanner, seconda rete scanner `uscita` con subnet
+  fissa e filtro nftables host-side; configurazione applicata sulla VM e
+  verificata dal self-check di egress;
 - **runner + CLI** — orchestrazione, metadati, output sequenziale, selezione
   `--only <collector>` per eseguire un sottoinsieme;
 - **test** (`tests/`) — parser di tutti i collector (zero/malformato/condizione
   non valida), contratto SSH (client + wrapper come subprocess), scope, modello,
   normalize, report.
 
-Resta per la messa in opera (**sulla VM**):
+Resta fuori dal perimetro verificato in questo run:
 
-- **primo test live: `system`** — il codice è pronto (`--only system`); sulla VM
-  si preparano chiave/known_hosts, l'utente `assess` col `ForceCommand`, e si
-  applicano le nft host-side (`net/applica-nftables.sh`). Procedura e checkpoint
-  nella sezione *«Primo test live del collector `system`»*;
-- collegare gli altri `_esegui_live` al processo reale (HTTP/psycopg/sorgente);
-- applicare la migrazione `0006` e creare `hermes_assess`;
-- e2e confinato contro l'istanza demo.
+- eseguire e validare live il collector `system` via SSH, inclusi i relativi
+  controlli host;
+- collegare gli altri `_esegui_live` al processo reale (SQLmap, Semgrep,
+  pip-audit e PostgreSQL, secondo lo stato riportato nella sezione dedicata);
+- eventuali verifiche e2e ulteriori oltre al run Nuclei già eseguito.
 
 ## Esecuzione
 
@@ -154,6 +153,38 @@ dati o stato. Il DB è letto in sola lettura. `docker compose down -v` cancella
 i volumi: è una procedura **manuale** dell'operatore, solo sull'istanza demo
 sacrificabile, **mai** un passo del tool.
 
+## Misure di isolamento e sicurezza applicate
+
+La scansione viene avviata esplicitamente dall'operatore: il servizio `scanner` è
+nel profilo Compose `assess` e non parte durante il normale avvio del pannello.
+L'immagine esegue il processo come utente non privilegiato `assess` (UID/GID
+1002), non concede capability aggiuntive e mantiene il codice dello scanner
+in sola lettura.
+
+Il confinamento di rete è applicato sull'host della VM, non affidato soltanto
+a controlli Python:
+
+- `interna` è una rete Docker `internal: true` condivisa da scanner, app e DB;
+  permette la comunicazione verso i servizi autorizzati senza uscita Internet;
+- `uscita` è una seconda rete con gateway, necessaria per il solo collegamento
+  SSH all'host. Ha una subnet esplicita (`VSPT_SUBNET_USCITA`) e le regole
+  nftables host-side consentono da quella subnet soltanto `host:22/tcp` e
+  traffico `established/related`; il resto viene scartato;
+- la stessa subnet viene passata a Compose e allo script nftables, evitando
+  divergenze fra rete e filtro;
+- il self-check di egress prova indirizzi/porte sentinella esterni prima di
+  avviare i collector. Se una sentinella risponde, il run viene bloccato;
+- il controllo di rete è quindi l'enforcement; il self-check è una tripwire
+  aggiuntiva e non sostituisce le regole firewall.
+
+I secret SSH sono file dell'host montati nel container in sola lettura:
+`/etc/hermes-vspt/secrets/scanner_ed25519` e
+`/etc/hermes-vspt/secrets/known_hosts` diventano rispettivamente
+`/run/secrets/scanner_ed25519` e `/run/secrets/known_hosts`.
+Non sono copiati nell'immagine, nel repository, negli argomenti del processo
+o nelle variabili d'ambiente. Anche `scope.toml` è montato read-only;
+i report vengono scritti separatamente in `assess/out/`.
+
 ## Canali autenticati (minimo privilegio)
 
 | Canale | Credenziale | Privilegio | Uso |
@@ -188,28 +219,96 @@ sacrificabile, **mai** un passo del tool.
   pulisce la temp dir. Se export, integrità o estrazione falliscono, i due
   check sono **FALLITO/NOT_RUN**, mai un falso "pulito".
 
-### SSH ristretto: installazione (sulla VM, venerdì)
+### SSH ristretto e gestione delle chiavi
 
-`assess/ssh/vspt-ssh-wrapper` nel repo resta la **fonte unica**: va tenuto
-byte-identico a quello sulla VM. Questo giro aggiunge il verbo `source.export`,
-quindi il wrapper **va reinstallato sulla VM** (stesso file, non una copia
-divergente) perché il nuovo verbo sia servito. Installazione:
+Il canale SSH è dedicato all'assessor. Il client non apre una shell: invia
+soltanto i verbi previsti dal protocollo (`system.info`, `system.listeners`,
+`system.processes` e `source.export`). Sul server, `sshd` impone il wrapper
+`vspt-ssh-wrapper` tramite `ForceCommand`; il wrapper confronta la stringa
+`SSH_ORIGINAL_COMMAND` con un'allowlist esatta. Non interpreta input come
+comando shell. La chiave autorizzata usa inoltre l'opzione `restrict`, che
+disabilita port forwarding, agent forwarding, X11 forwarding, PTY e user-rc.
+
+**Percorsi e proprietà dei secret:**
+
+| Elemento | Percorso sulla VM | Percorso nel container |
+|---|---|---|
+| Chiave privata dedicata | `/etc/hermes-vspt/secrets/scanner_ed25519` | `/run/secrets/scanner_ed25519` |
+| Host key pinning | `/etc/hermes-vspt/secrets/known_hosts` | `/run/secrets/known_hosts` |
+| Wrapper server | `/opt/pannello/assess/ssh/vspt-ssh-wrapper` | non montato nel container |
+
+I due file secret vengono montati `:ro` da Compose. La chiave privata non
+deve essere aggiunta al repository né copiata nell'immagine. La configurazione
+`[ssh]` di `scope.toml` contiene soltanto host, utente, porta e percorsi
+interni al container, mai il contenuto della chiave.
+
+**Preparazione sulla VM (una tantum, come amministratore):**
 
 ```bash
-# 1) utente non privilegiato, nessun sudo
+# Crea l'utente di servizio senza login interattivo, se non esiste già.
 sudo useradd --system --create-home --shell /usr/sbin/nologin assess
 
-# 2) il wrapper raggiungibile sulla VM (es. /opt/pannello/assess/ssh/) e python3
+# Directory dei secret: accesso ristretto.
+sudo install -d -o root -g root -m 700 /etc/hermes-vspt/secrets
 
-# 3) in ~assess/.ssh/authorized_keys, la chiave con restrict + ForceCommand:
-restrict,command="/opt/pannello/assess/ssh/vspt-ssh-wrapper" ssh-ed25519 AAAA... assess
+# Genera la coppia dedicata su una macchina amministrativa fidata.
+# Non sovrascrivere una chiave già in uso.
+ssh-keygen -t ed25519 -f scanner_ed25519 -C vspt-scanner
+
+# Installa la privata sulla VM con permessi restrittivi.
+sudo install -o root -g root -m 600 scanner_ed25519 \
+  /etc/hermes-vspt/secrets/scanner_ed25519
+
+# Installa la chiave pubblica nel file authorized_keys dell'utente assess.
+sudo install -d -o assess -g assess -m 700 /home/assess/.ssh
+sudo sh -c 'cat scanner_ed25519.pub > /home/assess/.ssh/authorized_keys'
+sudo chown assess:assess /home/assess/.ssh/authorized_keys
+sudo chmod 600 /home/assess/.ssh/authorized_keys
 ```
 
-`restrict` toglie port/agent/X11-forwarding, pty e user-rc; `command="…"`
-(ForceCommand della chiave) impone il wrapper a ogni connessione, qualunque
-cosa il client chieda. Il wrapper risponde solo ai verbi dell'allowlist, in
-sola lettura e senza privilegi; ogni altra stringa è negata. Il client-side non
-c'entra con questa garanzia: è `sshd` ad applicarla.
+La riga pubblica in `authorized_keys` deve essere prefissata da:
+
+```text
+restrict,command="/opt/pannello/assess/ssh/vspt-ssh-wrapper" ssh-ed25519 AAAA... vspt-scanner
+```
+
+Sostituire `AAAA...` con il contenuto reale della chiave pubblica.
+Il wrapper deve essere posseduto da root e non modificabile dall'utente
+`assess`; verificare inoltre che il percorso sia eseguibile e che `sshd`
+consenta l'autenticazione a chiave pubblica per l'utente dedicato.
+
+**Fissare l'identità dell'host SSH:** `known_hosts` non deve essere creato
+accettando alla cieca la prima connessione. Recuperare la fingerprint della
+host key tramite console o canale amministrativo fidato e confrontarla
+esplicitamente; solo dopo il confronto si può registrare la host key nel file
+`known_hosts`. Installarlo quindi con permessi restrittivi:
+
+```bash
+sudo install -o root -g root -m 600 known_hosts \
+  /etc/hermes-vspt/secrets/known_hosts
+```
+
+Il client SSH usa `BatchMode=yes`, `IdentitiesOnly=yes`,
+`StrictHostKeyChecking=yes`, il file `known_hosts` esplicito e un
+`ConnectTimeout`. Una host key sconosciuta o cambiata fa fallire la
+connessione: non viene accettata automaticamente.
+
+Nel `scope.toml` i percorsi devono essere quelli **dentro il container**:
+
+```toml
+[ssh]
+host = "IP_O_HOSTNAME_VM"
+user = "assess"
+port = 22
+key_path = "/run/secrets/scanner_ed25519"
+known_hosts_path = "/run/secrets/known_hosts"
+```
+
+Il protocollo completo e l'allowlist sono descritti in
+[assess/ssh/PROTOCOL.md](ssh/PROTOCOL.md). Il wrapper nel repository è la
+fonte di verità: dopo ogni sua modifica va distribuita sulla VM la stessa
+versione, senza copie divergenti.
+
 
 ## Primo test live del collector `system` (sulla VM)
 
