@@ -121,8 +121,6 @@ def comando_run(args: argparse.Namespace) -> int:
         commit_pannello=_commit_pannello(repo_root),
     )
 
-
-
     print(f"vspt {__version__} — target pinnato: {target} ({cfg.target.base_url})")
     print("egress self-check…", file=sys.stderr)
     try:
