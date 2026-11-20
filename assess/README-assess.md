@@ -380,6 +380,62 @@ presentato come superato: i check saltati/falliti e i limiti sono mostrati in
 cima al report, non in nota. `pentest_result: negative` significa *non rilevato
 nei test svolti*, non *assente*.
 
+## Roadmap futura
+
+La roadmap mantiene il perimetro del progetto: assessment difensivo della web
+application e dell'ambiente che la ospita, eseguito esclusivamente
+sull'istanza autorizzata e confinata. Le attività sono ordinate per priorità;
+le voci future non sono funzionalità già disponibili.
+
+### Priorità di completamento
+
+1. **SQLmap — self-pentest controllato.** Completare e validare l'esecuzione
+   live sul target autorizzato, mantenendo un profilo prudente e non
+   distruttivo. Documentare nel report le evidenze prodotte, i parametri
+   verificati e i limiti del test. I risultati del penetration test devono
+   confluire nella stessa tabella dei finding, senza un report parallelo.
+2. **Collector `system` via SSH.** Eseguire e validare sul target il
+   risk assessment dell'host tramite i verbi `system.*`, verificando il
+   trasporto SSH ristretto, il comportamento fail-closed e la corretta
+   raccolta di processi e porte in ascolto.
+3. **PostgreSQL in sola lettura.** Se il tempo e le condizioni operative lo
+   consentono, completare il collector DB usando il ruolo dedicato
+   `hermes_assess`, con privilegi `SELECT` e senza riutilizzare l'utente
+   applicativo. La verifica deve restare osservativa.
+
+### Attività successive, rinviate
+
+4. **Semgrep e pip-audit.** Collegare l'esecuzione live sfruttando il flusso
+   `source.export` via SSH e l'ingest sicuro già predisposto. Questi controlli
+   sono rinviati rispetto alle priorità precedenti: parser e infrastruttura
+   non equivalgono a una scansione live completata.
+5. **Ampliamento dei controlli DAST e di dipendenza.** Valutare in una fase
+   successiva l'integrazione di strumenti come Katana, FFUF e Arjun per
+   l'estensione controllata della superficie di test, e Trivy per ulteriori
+   verifiche sulle immagini e sulle dipendenze. Ogni integrazione dovrà
+   rispettare scope, allowlist, confinamento di rete e profili di esecuzione
+   non distruttivi.
+6. **Aggiornamento delle intelligence e delle vulnerabilità.** Valutare
+   feed CVE e aggiornamento controllato delle fonti/template, mantenendo
+   separato l'aggiornamento (che può richiedere accesso alla rete) dal run
+   confinato di assessment.
+7. **Dashboard.** Solo dopo aver consolidato collector, report e qualità dei
+   finding, valutare una vista di consultazione dei risultati. Il JSON resta
+   la fonte canonica; HTML e ogni eventuale dashboard sono viste derivate.
+
+### Invarianti da mantenere
+
+Qualunque estensione dovrà preservare:
+
+- un unico modello di finding e una tabella di rischio unificata basata su
+  **impatto × probabilità**, includendo le evidenze del penetration test;
+- distinzione esplicita tra controlli completati, saltati, falliti e
+  limitazioni: `NOT_RUN` non significa superato;
+- scope esplicito e fail-closed, senza scansioni fuori dal target autorizzato;
+- isolamento di rete applicato a livello infrastrutturale e credenziali con
+  privilegi minimi;
+- report JSON canonico e HTML derivato dallo stesso documento.
+
 ### Severità: la banda derivata dal `risk_score`
 
 La `severity` di un finding è la **banda nominale** standard
