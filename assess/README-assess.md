@@ -25,19 +25,20 @@ Implementato e testato **senza VM né target**:
 - **normalizzazione** (`normalize.py`) — `RawResult` → finding, con dedup;
 - **report** (`report/`) — JSON canonico con schema, HTML dai soli dati JSON;
 - **inventario** (`inventory/`) — endpoint e parametri da `openapi.json`;
-- **validatore ForceCommand** (`ssh/`) — l'allowlist lato server che pinna gli
-  argomenti (vedi *SSH ristretto* sotto);
+- **protocollo SSH a verbi** (`ssh/PROTOCOL.md`, `wrappers/ssh.py`) — il client
+  parla il contratto del wrapper `vspt-ssh-wrapper` (fonte di verità sulla VM);
 - **config di rete** (`net/nftables-assess.nft`, `compose.assess.yaml`) —
   **scritta**, da applicare sulla VM;
 - **runner + CLI** — orchestrazione, metadati, output sequenziale;
 - **test** (`tests/`) — parser di tutti i collector (zero/malformato/condizione
-  non valida), ForceCommand, scope, modello, normalize, report.
+  non valida), contratto SSH (client + wrapper come subprocess), scope, modello,
+  normalize, report.
 
 Resta per la messa in opera (**venerdì, sulla VM**):
 
 - collegare `_esegui_live` al processo reale (subprocess/SSH/psycopg);
 - applicare la migrazione `0006` e creare `hermes_assess`;
-- installare il drop-in `ForceCommand` e le regole `nftables`;
+- installare il `ForceCommand` (`vspt-ssh-wrapper`, restrict) e le regole `nftables`;
 - e2e confinato contro l'istanza demo.
 
 ## Esecuzione
@@ -136,38 +137,37 @@ sacrificabile, **mai** un passo del tool.
 - **`hermes_assess`**: ruolo nuovo, migrazione `0006`, `SELECT` sulle tabelle +
   lettura `pg_catalog`/`information_schema`. Non si riusa `hermes_app` (non è
   read-only). La migrazione è **scritta ma non applicata**: si applica venerdì.
-- **SSH — la restrizione sta sul server, non nel wrapper Python.** Il
-  `wrappers/ssh.py` decide solo *cosa il tool invia*; non impedisce a chi ha la
-  chiave di aprire una shell. Il minimo privilegio reale è:
-  account `assess` non privilegiato, `restrict` in `authorized_keys`, e un
-  `ForceCommand` validatore che confronta `$SSH_ORIGINAL_COMMAND` con
-  un'allowlist di comandi read-only. L'allowlist vive sul server, applicata da
-  `sshd`.
+- **SSH — un protocollo a verbi, la restrizione sta sul server.** Non comandi
+  shell: il client (`wrappers/ssh.py`) invia un **verbo logico**
+  (`system.info`, `system.listeners`, `system.processes`) e riceve **un
+  envelope JSON** su una riga. Il controllo di sicurezza è il ForceCommand
+  `assess/ssh/vspt-ssh-wrapper` sulla VM: `sshd` lo invoca per ogni
+  connessione, legge `$SSH_ORIGINAL_COMMAND` come stringa-verbo esatta (mai
+  shell), la confronta con l'allowlist dei verbi e risponde. `system.processes;
+  id` non è il verbo `system.processes`: è un'altra stringa, e viene negata con
+  `COMMAND_NOT_ALLOWED` (exit 126). Il contratto completo è in
+  **`assess/ssh/PROTOCOL.md`**.
 
-### SSH ristretto: installazione del ForceCommand (sulla VM, venerdì)
+### SSH ristretto: installazione (sulla VM, venerdì)
 
-Il validatore è `assess/ssh/hermes-assess-ssh` (logica in
-`assess/ssh/validatore.py`): un'allowlist che **pinna gli argomenti**, non solo
-il verbo. Ammette i quattro comandi fissi (`ss -tlnp`, `ps aux`, `systemctl
-list-units --type=service --state=running`, `docker ps --format '…'`),
-`cat <percorso>` solo sotto `/opt/pannello` e senza `..`, `ls -la <dir>` con la
-stessa regola; tutto il resto è negato con uscita non-zero.
-
-Installazione sul server (**scritto, non installato** — da fare venerdì):
+`assess/ssh/vspt-ssh-wrapper` nel repo è **byte-identico** a quello installato
+e testato sulla VM: la VM è la fonte di verità, il repo la segue. Non si
+modifica da qui. Installazione:
 
 ```bash
 # 1) utente non privilegiato, nessun sudo
 sudo useradd --system --create-home --shell /usr/sbin/nologin assess
 
-# 2) il package assess/ raggiungibile (es. sotto /opt/pannello)
-#    e python3 presente
+# 2) il wrapper raggiungibile sulla VM (es. /opt/pannello/assess/ssh/) e python3
 
 # 3) in ~assess/.ssh/authorized_keys, la chiave con restrict + ForceCommand:
-restrict,command="/usr/bin/env PYTHONPATH=/opt/pannello python3 /opt/pannello/assess/ssh/hermes-assess-ssh" ssh-ed25519 AAAA... assess
+restrict,command="/opt/pannello/assess/ssh/vspt-ssh-wrapper" ssh-ed25519 AAAA... assess
 ```
 
-`restrict` toglie port/agent/X11-forwarding, pty e user-rc; `ForceCommand`
-impone il validatore a ogni connessione. Il wrapper client-side non c'entra con
+`restrict` toglie port/agent/X11-forwarding, pty e user-rc; `command="…"`
+(ForceCommand della chiave) impone il wrapper a ogni connessione, qualunque
+cosa il client chieda. Il wrapper risponde solo ai tre verbi, in sola lettura e
+senza privilegi; ogni altra stringa è negata. Il client-side non c'entra con
 questa garanzia: è `sshd` ad applicarla.
 
 ## Il report
@@ -218,10 +218,11 @@ standard library.
 python -m pytest assess/tests/ -q
 ```
 
-118 test su fixture di output grezzo (`tests/fixtures/`): nessuna rete, nessun
-target. Coprono i parser di tutti i collector (risultati, zero, malformato,
-condizione non valida), il validatore ForceCommand, lo scope guard, il modello,
-la normalizzazione e il report. Richiedono `jsonschema` (già in `pyproject [dev]`).
+110 test su fixture (`tests/fixtures/`): nessuna rete, nessun target. Coprono i
+parser di tutti i collector (risultati, zero, malformato, condizione non
+valida), il contratto SSH (client + `vspt-ssh-wrapper` invocato come
+subprocess), lo scope guard, il modello, la normalizzazione e il report.
+Richiedono `jsonschema` (già in `pyproject [dev]`).
 
 La CI del pannello esegue `tests/` (la suite del backend), non `assess/tests/`:
 quest'ultima si lancia a mano col comando sopra.

@@ -1,3 +1,0 @@
-State   Recv-Q  Send-Q   Local Address:Port   Peer Address:Port  Process
-LISTEN  0       128      0.0.0.0:8000         0.0.0.0:*          users:(("uvicorn",pid=7,fd=3))
-LISTEN  0       244      127.0.0.1:5432       0.0.0.0:*          users:(("postgres",pid=12,fd=5))
