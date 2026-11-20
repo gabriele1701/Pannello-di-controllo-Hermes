@@ -1,56 +1,69 @@
-# Servizio scanner VSPT — BOZZA, DA COMPLETARE SULLA VM. Si usa come OVERRIDE
-# del compose del pannello:
+# Servizio scanner VSPT — OVERRIDE del compose del pannello, per il PRIMO test
+# live del collector `system` (SSH). Si usa cosi', da repo root:
 #
-#     docker compose -f compose.yaml -f assess/compose.assess.yaml --profile assess \
-#       run --rm scanner run --config /scope/scope.toml
+#     VSPT_SUBNET_USCITA=10.77.42.0/24 \
+#       docker compose -f compose.yaml -f assess/compose.assess.yaml --profile assess \
+#       run --rm scanner run --config /scope/scope.toml --only system
 #
-# Cosi' lo scanner condivide il progetto con `app` e `db` e li raggiunge per
-# nome di servizio. I valori che dipendono dalla VM sono <DA_COMPILARE>.
+# Lo scanner condivide il progetto con `app` e `db` (li raggiunge per NOME DI
+# SERVIZIO sulla rete `interna`) e, solo per l'SSH, puo' uscire verso `host:22`
+# sulla rete `uscita` — sorvegliata dalle regole nft HOST-SIDE (assess/net/).
 #
-# Due reti, e il perche' (rilievo recepito)
-# -----------------------------------------
-# `internal: true` da solo NON regge questo disegno: una rete internal-only non
-# ha gateway, quindi confina bene `app`/`db` ma chiude anche l'unica eccezione
-# che serve, l'SSH verso l'host della VM (`host:22`). Da li' quel pacchetto non
-# ha una via.
-#
-# Percio':
-#   - `interna` (internal: true) collega scanner, app e db: nessuna uscita.
-#   - `uscita` (con gateway) serve SOLO a raggiungere host:22, ed e' sorvegliata
-#     dalle regole nft in assess/net/nftables-assess.nft (default drop + i soli
-#     app/db/host:22). L'enforcement e' li', non in un if.
+# Due reti, e il perche' (invariato)
+# ----------------------------------
+#   - `interna` (internal: true): scanner + app + db, NESSUNA uscita.
+#   - `uscita` (con gateway): serve SOLO a raggiungere host:22, con SUBNET FISSA
+#     cosi' che le nft host-side filtrino per subnet (IP riproducibili) e non per
+#     IP per-container, che cambiano a ogni `up`.
 # L'egress self-check del tool resta la tripwire che verifica tutto questo.
+#
+# Nessun segreto in questo file:
+#   - chiave privata e known_hosts sono BIND MOUNT read-only da percorsi
+#     dell'host della VM (mai nel repo, mai in env/argv);
+#   - le credenziali HTTP/DB sono NOMI di variabili e, per il test `system`,
+#     sono OPZIONALI (default vuoto): i collector che le userebbero restano
+#     NOT_RUN, non un errore d'avvio.
 
 services:
+  # app e db restano sulla loro rete operativa (`default`) e si AGGIUNGONO alla
+  # rete `interna` dello scanner, cosi' che lo scanner li veda per nome. La loro
+  # uscita non cambia: la restrizione di egress riguarda lo scanner, non loro.
+  app:
+    networks:
+      - default
+      - interna
+  db:
+    networks:
+      - default
+      - interna
+
   scanner:
     build:
       context: ..
       dockerfile: assess/Dockerfile
+    # Non-root (uid/gid 1002) e nessun privilegio: fissati nel Dockerfile. Le
+    # regole nft NON girano nel container (sono host-side), quindi niente
+    # CAP_NET_ADMIN e niente montaggio del file di regole qui dentro.
     networks:
       - interna   # app, db (nessuna uscita)
-      - uscita    # solo host:22, ristretta da nftables
+      - uscita    # solo host:22, ristretta dalle nft host-side
     environment:
-      # Solo NOMI qui: i valori arrivano dall'ambiente dell'host, non dal file.
-      ASSESS_TARGET_PASSWORD: "${ASSESS_TARGET_PASSWORD:?serve la password demo}"
-      ASSESS_DB_DSN: "${ASSESS_DB_DSN:?serve il DSN di hermes_assess}"
+      # Solo NOMI. Per il test `system` (SSH) queste sono OPZIONALI: default
+      # vuoto -> i collector HTTP/DB restano NOT_RUN, mai un errore d'avvio.
+      ASSESS_TARGET_PASSWORD: "${ASSESS_TARGET_PASSWORD:-}"
+      ASSESS_DB_DSN: "${ASSESS_DB_DSN:-}"
     # host.docker.internal mappa l'host della VM dal container (per l'SSH).
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # CAP_NET_ADMIN serve ad applicare le regole nft DENTRO il container
-    # (alternativa: applicarle sull'host filtrando per l'IP dello scanner).
-    # Da abilitare sulla VM, insieme al montaggio del file di regole:
-    # cap_add:
-    #   - NET_ADMIN
-    # La chiave SSH come secret montato, non come variabile:
-    # secrets:
-    #   - assess_ssh_key
     volumes:
-      # La config di scope compilata e la directory dei report. <DA_COMPILARE>
-      # i percorsi reali sulla VM.
+      # Chiave privata e known_hosts: BIND MOUNT READ-ONLY da percorsi dell'host
+      # della VM. I percorsi host (a sinistra) sono quelli preparati sulla VM;
+      # quelli nel container (a destra) sono gli stessi dichiarati in scope.toml.
+      - /etc/hermes-vspt/secrets/scanner_ed25519:/run/secrets/scanner_ed25519:ro
+      - /etc/hermes-vspt/secrets/known_hosts:/run/secrets/known_hosts:ro
+      # Config di scope compilata dall'operatore e directory dei report.
       - ./scope.toml:/scope/scope.toml:ro
       - ./out:/opt/pannello/assess/out
-      # Le regole di egress, montate in sola lettura e applicate all'avvio sulla VM:
-      - ./net/nftables-assess.nft:/etc/assess/nftables-assess.nft:ro
     # Lo scanner NON parte da solo: niente scansioni al boot. Si lancia a mano
     # col sottocomando `run`. `profiles` evita che un `up` del pannello lo tiri
     # su per sbaglio.
@@ -60,16 +73,14 @@ services:
 networks:
   interna:
     internal: true
-    # app e db devono stare ANCHE su questa rete: nell'override si aggiunge
-    # `interna` ai loro `networks`, oppure la si dichiara come rete condivisa
-    # del progetto. Su internal:true restano raggiungibili tra loro e dallo
-    # scanner, ma non escono verso Internet.
   uscita:
-    # Rete con gateway: NON internal. Da sola darebbe egress pieno — e' il file
-    # nft a restringerla alle sole app/db/host:22. Senza quelle regole applicate,
-    # NON usare questa configurazione su una rete raggiungibile.
+    # Rete CON gateway: NON internal. Da sola darebbe egress pieno — sono le nft
+    # host-side (assess/net/nftables-assess.nft) a restringerla a host:22.
+    # La subnet e' FISSA e scelta dall'operatore: la STESSA variabile
+    # VSPT_SUBNET_USCITA alimenta anche le nft, cosi' rete e filtro concordano.
+    # Senza la variabile l'avvio fallisce (fail-closed): una /24 non scelta non
+    # e' una /24.
     driver: bridge
-
-# secrets:
-#   assess_ssh_key:
-#     file: ./secrets/assess_ssh_key   # chiave privata, MAI nel repo
+    ipam:
+      config:
+        - subnet: "${VSPT_SUBNET_USCITA:?scegli una /24 non usata per la rete uscita, es. 10.77.42.0/24; la stessa var alimenta le nft host-side}"

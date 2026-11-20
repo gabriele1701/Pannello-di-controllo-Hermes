@@ -33,3 +33,10 @@ backend/static/
 # Stato locale
 *.log
 .DS_Store
+
+# VSPT: lo scope COMPILATO (indirizza il perimetro di un run) non va mai nel
+# repo; solo scope.example.toml e' versionato. E i report sono prodotti, non
+# sorgente.
+scope.toml
+assess/scope.toml
+assess/out/
