@@ -290,68 +290,89 @@ def _sha256(blob):
     return hashlib.sha256(blob).hexdigest()
 
 
-def collect_source_files(root):
-    """Allowlist di CONTENUTO: solo i *.py regolari sotto backend/ (esclusi
-    static/, __pycache__, .git) piu' i due manifest, come coppie (rel, full).
+class _LimiteExport(Exception):
+    """Un cap dell'export (file/byte/tempo) e' stato superato durante la
+    raccolta: l'export si ferma e non produce archivio."""
 
-    os.walk con followlinks=False e os.lstat + S_ISREG: i symlink e i file
-    speciali non entrano. Niente scrittura sul target: sola enumerazione e
-    lettura."""
+
+def iter_source_files(root, scaduto):
+    """Genera le coppie (rel, full) dei file in allowlist, una per volta.
+
+    Allowlist di CONTENUTO: solo i *.py regolari sotto backend/ (esclusi
+    static/, __pycache__, .git) piu' i due manifest. `scaduto()` restituisce
+    True quando il tempo e' finito, ed e' controllato ANCHE durante os.walk.
+
+    Onesta' dell'export (fallisce invece di consegnare un archivio parziale):
+    un errore di scansione directory (os.walk onerror) o un lstat fallito su un
+    file SELEZIONATO propagano l'OSError e fanno fallire l'export. Restano
+    silenziose solo le esclusioni INTENZIONALI: le directory escluse e i membri
+    non regolari (symlink/speciali, S_ISREG falso) si saltano senza errore, e un
+    manifest assente (FileNotFoundError) non e' un guasto."""
     root = os.path.abspath(root)
-    selezionati = []
-
     backend = os.path.join(root, "backend")
-    for dirpath, dirnames, filenames in os.walk(backend, followlinks=False):
+
+    def _onerror(exc):
+        raise exc  # un errore di scansione dir non si ignora
+
+    for dirpath, dirnames, filenames in os.walk(
+        backend, followlinks=False, onerror=_onerror
+    ):
+        if scaduto():
+            raise _LimiteExport()
         dirnames[:] = [d for d in dirnames if d not in _ESCLUSE]
-        for nome in filenames:
+        for nome in sorted(filenames):
             if not nome.endswith(".py"):
                 continue
             full = os.path.join(dirpath, nome)
-            try:
-                info = os.lstat(full)
-            except OSError:
-                continue
-            if not stat.S_ISREG(info.st_mode):  # niente symlink/speciali
-                continue
-            selezionati.append((os.path.relpath(full, root), full))
+            info = os.lstat(full)  # OSError qui -> export fallito, non ignorato
+            if not stat.S_ISREG(info.st_mode):
+                continue  # non regolare: esclusione intenzionale, silenziosa
+            yield os.path.relpath(full, root), full
 
     for manifest in _MANIFEST:
         full = os.path.join(root, manifest)
         try:
             info = os.lstat(full)
-        except OSError:
+        except FileNotFoundError:
+            continue  # manifest assente: non e' un guasto
+        if not stat.S_ISREG(info.st_mode):
             continue
-        if stat.S_ISREG(info.st_mode):
-            selezionati.append((manifest, full))
-
-    selezionati.sort()
-    return selezionati
+        yield manifest, full
 
 
 def source_export():
     """Esporta il sorgente autorizzato come tar.gz in un envelope. Percorsi
-    fissi lato server, cap su file/byte/tempo, solo letture di file regolari."""
+    fissi lato server; cap su file/byte/tempo applicati DURANTE la raccolta, con
+    la memoria davvero bounded (nessun file viene mai caricato oltre il budget);
+    solo letture di file regolari."""
     check_id = "SRC-01"
-    try:
-        files = collect_source_files(SOURCE_ROOT)
+    inizio = time.monotonic()
 
-        inizio = time.monotonic()
+    def scaduto():
+        return time.monotonic() - inizio > EXPORT_TIMEOUT
+
+    try:
         totale = 0
         membri = []  # (rel, data, sha)
 
-        for rel, full in files:
+        # Il timer parte PRIMA dell'enumerazione, quindi copre anche os.walk.
+        for rel, full in iter_source_files(SOURCE_ROOT, scaduto):
             if len(membri) >= MAX_FILES:
                 emit(check_id, "error", error={"code": "EXPORT_LIMIT_EXCEEDED"})
                 return EXIT_ERROR
-            if time.monotonic() - inizio > EXPORT_TIMEOUT:
+            if scaduto():
                 emit(check_id, "error", error={"code": "EXPORT_LIMIT_EXCEEDED"})
                 return EXIT_ERROR
+            # Budget residuo: si legge al massimo residuo+1 byte, cosi' nessun
+            # singolo file supera il cap in RAM. Se ne arrivano piu' del residuo,
+            # il file (o l'insieme) sfora: export fallito.
+            residuo = MAX_TOTAL_BYTES - totale
             with open(full, "rb") as handle:
-                blob = handle.read()
-            totale += len(blob)
-            if totale > MAX_TOTAL_BYTES:
+                blob = handle.read(residuo + 1)
+            if len(blob) > residuo:
                 emit(check_id, "error", error={"code": "EXPORT_LIMIT_EXCEEDED"})
                 return EXIT_ERROR
+            totale += len(blob)
             membri.append((rel, blob, _sha256(blob)))
 
         # Archivio costruito a mano, un TarInfo regolare per file: niente
@@ -382,8 +403,13 @@ def source_export():
         emit(check_id, "ok", data=data)
         return EXIT_OK
 
+    except _LimiteExport:
+        emit(check_id, "error", error={"code": "EXPORT_LIMIT_EXCEEDED"})
+        return EXIT_ERROR
     except OSError:
-        emit(check_id, "error", error={"code": "EXPORT_UNAVAILABLE"})
+        # Un errore di scansione directory o un file selezionato illeggibile:
+        # export fallito, MAI un archivio parziale dichiarato ok.
+        emit(check_id, "error", error={"code": "EXPORT_READ_ERROR"})
         return EXIT_ERROR
 
 

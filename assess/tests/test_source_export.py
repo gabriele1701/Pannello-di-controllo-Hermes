@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.machinery
+import importlib.util
 import io
 import json
 import os
@@ -19,11 +21,22 @@ from pathlib import Path
 
 import pytest
 
+from assess.config import ConfigSsh
 from assess.source_ingest import sorgente_da_envelope
-from assess.wrappers.ssh import leggi_envelope
+from assess.wrappers.ssh import EsecuzioneLiveNonDisponibile, WrapperSsh, leggi_envelope
 
 RADICE = Path(__file__).resolve().parents[2]
 WRAPPER = RADICE / "assess" / "ssh" / "vspt-ssh-wrapper"
+
+
+def _carica_wrapper():
+    """Carica vspt-ssh-wrapper (senza estensione .py) come modulo, per i test
+    unitari che devono simulare errori di I/O che da root non si riproducono."""
+    loader = importlib.machinery.SourceFileLoader("vspt_wrapper", str(WRAPPER))
+    spec = importlib.util.spec_from_loader("vspt_wrapper", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
 
 
 @pytest.fixture
@@ -109,3 +122,116 @@ def test_export_poi_ingest_end_to_end(sorgente_finto):
         assert (s.percorso / "backend" / "main.py").read_text() == "x = 1\n"
         assert s.provenienza.esito == "ok"
         assert s.provenienza.file_count == 4
+
+
+# --------------------------------------------------------------------------- #
+# FIX 1 — il client ammette il verbo source.export
+# --------------------------------------------------------------------------- #
+
+
+def test_fix1_client_ammette_source_export():
+    w = WrapperSsh(ConfigSsh(host="vm", user="assess"))
+    # NON deve sollevare ValueError ("verbo non ammesso"): deve arrivare allo
+    # stub dell'I/O live.
+    with pytest.raises(EsecuzioneLiveNonDisponibile):
+        w.esegui("source.export")
+
+
+# --------------------------------------------------------------------------- #
+# FIX 2 — un file oltre il cap non viene caricato intero
+# --------------------------------------------------------------------------- #
+
+
+def test_fix2_file_oltre_cap_e_limite(sorgente_finto):
+    (sorgente_finto / "backend" / "grande.py").write_bytes(b"A" * 200_000)
+    env, code = _export(sorgente_finto, VSPT_MAX_TOTAL_BYTES="1000")
+    assert code == 1 and env["status"] == "error"
+    assert env["error"]["code"] == "EXPORT_LIMIT_EXCEEDED"
+
+
+def test_fix2_non_carica_il_file_intero(tmp_path, monkeypatch, capsys):
+    """Coglie il bounded: un file enorme viene letto al massimo per (residuo+1)
+    byte, mai intero. Senza il fix, read() sarebbe chiamato senza limite."""
+    import builtins
+
+    w = _carica_wrapper()
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend" / "grande.py").write_bytes(b"A" * 5_000_000)
+    monkeypatch.setattr(w, "SOURCE_ROOT", str(tmp_path))
+    monkeypatch.setattr(w, "MAX_TOTAL_BYTES", 1000)
+
+    letture: list[int] = []
+    apri_reale = builtins.open
+
+    class _Spia:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def read(self, n=-1):
+            letture.append(n)
+            return self._handle.read(n)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._handle.close()
+
+    def apri_spia(percorso, *a, **k):
+        reale = apri_reale(percorso, *a, **k)
+        return _Spia(reale) if str(percorso).endswith("grande.py") else reale
+
+    monkeypatch.setattr(builtins, "open", apri_spia)
+    codice = w.source_export()
+    monkeypatch.setattr(builtins, "open", apri_reale)
+
+    envelope = json.loads(capsys.readouterr().out.strip())
+    assert codice == w.EXIT_ERROR
+    assert envelope["error"]["code"] == "EXPORT_LIMIT_EXCEEDED"
+    # Letto una sola volta, con un limite = residuo+1 = 1001, MAI read(-1).
+    assert letture == [1001]
+
+
+# --------------------------------------------------------------------------- #
+# FIX 3 — un export incompleto non si dichiara ok (test unitari, no root bypass)
+# --------------------------------------------------------------------------- #
+
+
+def test_fix3_file_selezionato_illeggibile_e_export_fallito(tmp_path, monkeypatch, capsys):
+    w = _carica_wrapper()
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend" / "main.py").write_text("x = 1\n")
+    monkeypatch.setattr(w, "SOURCE_ROOT", str(tmp_path))
+    originale = w.os.lstat
+
+    def lstat_che_nega(percorso, *a, **k):
+        if str(percorso).endswith("main.py"):
+            raise PermissionError("permesso negato")
+        return originale(percorso, *a, **k)
+
+    monkeypatch.setattr(w.os, "lstat", lstat_che_nega)
+    codice = w.source_export()
+    envelope = json.loads(capsys.readouterr().out.strip())
+    assert codice == w.EXIT_ERROR
+    assert envelope["status"] == "error"
+    assert envelope["error"]["code"] == "EXPORT_READ_ERROR"
+
+
+def test_fix3_errore_scansione_directory_propaga(tmp_path, monkeypatch):
+    w = _carica_wrapper()
+
+    def walk_con_errore(top, followlinks=True, onerror=None):
+        if onerror is not None:
+            onerror(PermissionError("scansione negata"))
+        return iter([])
+
+    monkeypatch.setattr(w.os, "walk", walk_con_errore)
+    with pytest.raises(PermissionError):
+        list(w.iter_source_files(str(tmp_path), lambda: False))
+
+
+def test_fix3_symlink_saltato_export_ok(sorgente_finto):
+    # Controprova: un symlink NON e' un guasto, si salta e l'export resta ok.
+    env, code = _export(sorgente_finto)
+    assert code == 0 and env["status"] == "ok"
+    assert not any("evil" in f["path"] for f in env["data"]["files"])

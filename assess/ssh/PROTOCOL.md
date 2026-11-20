@@ -117,7 +117,7 @@ prodotto (`EXPORT_LIMIT_EXCEEDED`).
 | SYS-01 | `SYSTEM_INFO_UNAVAILABLE`                                    |
 | SYS-02 | `LISTENER_COMMAND_FAILED`, `LISTENER_COMMAND_TIMEOUT`, `LISTENER_COMMAND_UNAVAILABLE` |
 | SYS-03 | `PROCESS_COMMAND_FAILED`, `PROCESS_COMMAND_TIMEOUT`, `PROCESS_COMMAND_UNAVAILABLE` |
-| SRC-01 | `EXPORT_LIMIT_EXCEEDED` (oltre i cap file/byte/tempo), `EXPORT_UNAVAILABLE` |
+| SRC-01 | `EXPORT_LIMIT_EXCEEDED` (oltre i cap file/byte/tempo), `EXPORT_READ_ERROR` (scansione dir fallita o file selezionato illeggibile: mai un archivio parziale dichiarato ok) |
 
 ## Onesta' lato client
 

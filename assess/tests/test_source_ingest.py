@@ -55,12 +55,18 @@ def _reg(name: str, data: bytes = b"x = 1\n") -> tuple[tarfile.TarInfo, bytes]:
 # --------------------------------------------------------------------------- #
 
 
+def _files_meta(membri: list[tuple[str, bytes]]) -> list[dict]:
+    """Provenienza coerente: path/sha256/size reali dei membri."""
+    return [
+        {"path": p, "sha256": hashlib.sha256(d).hexdigest(), "size": len(d)}
+        for p, d in membri
+    ]
+
+
 def test_archivio_benigno_estratto_e_provenienza():
-    arc = _tar([_reg("backend/main.py"), _reg("requirements.txt", b"fastapi==1\n")])
-    env = _envelope(
-        arc, file_count=2,
-        files=[{"path": "backend/main.py", "sha256": "a", "size": 6}],
-    )
+    membri = [("backend/main.py", b"x = 1\n"), ("requirements.txt", b"fastapi==1\n")]
+    arc = _tar([_reg(p, d) for p, d in membri])
+    env = _envelope(arc, file_count=2, files=_files_meta(membri))
     with sorgente_da_envelope(env) as s:
         estratti = sorted(
             p.relative_to(s.percorso).as_posix()
@@ -150,6 +156,52 @@ def test_envelope_error_e_ingest_fallito():
         with sorgente_da_envelope(env):
             pass
     assert exc.value.code == "EXPORT_LIMIT_EXCEEDED"
+
+
+# --------------------------------------------------------------------------- #
+# FIX 4 — la provenienza registrata dev'essere vera
+# --------------------------------------------------------------------------- #
+
+
+def test_file_count_sbagliato_e_provenienza_incoerente():
+    membri = [("backend/main.py", b"x = 1\n")]
+    arc = _tar([_reg(p, d) for p, d in membri])
+    env = _envelope(arc, file_count=5, files=_files_meta(membri))  # dichiara 5, c'e' 1
+    with pytest.raises(IngestFallito) as exc:
+        with sorgente_da_envelope(env):
+            pass
+    assert exc.value.code == "PROVENIENZA_INCOERENTE"
+
+
+def test_sha_per_file_non_combaciante_e_provenienza_incoerente():
+    membri = [("backend/main.py", b"x = 1\n")]
+    arc = _tar([_reg(p, d) for p, d in membri])
+    files = [{"path": "backend/main.py", "sha256": "deadbeef", "size": 6}]
+    env = _envelope(arc, file_count=1, files=files)
+    with pytest.raises(IngestFallito) as exc:
+        with sorgente_da_envelope(env):
+            pass
+    assert exc.value.code == "PROVENIENZA_INCOERENTE"
+
+
+def test_byte_size_sbagliato_e_provenienza_incoerente():
+    membri = [("backend/main.py", b"x = 1\n")]
+    arc = _tar([_reg(p, d) for p, d in membri])
+    env = _envelope(arc, file_count=1, files=_files_meta(membri), byte_size=999999)
+    with pytest.raises(IngestFallito) as exc:
+        with sorgente_da_envelope(env):
+            pass
+    assert exc.value.code == "PROVENIENZA_INCOERENTE"
+
+
+def test_base64_sovradimensionato_rifiutato_prima_del_decode():
+    # len(b64)*3//4 oltre il cap -> rifiutato senza allocare il decodificato.
+    env = Envelope(1, "SRC-01", "ok",
+                   {"archive_b64": "A" * 4000, "archive_sha256": "x"}, None)
+    with pytest.raises(IngestFallito) as exc:
+        with sorgente_da_envelope(env, max_total_bytes=100):
+            pass
+    assert exc.value.code == "ARCHIVE_TROPPO_GRANDE"
 
 
 def test_temp_dir_rimossa_anche_su_guasto():

@@ -82,8 +82,16 @@ class SorgenteEstratto:
     provenienza: Provenienza
 
 
-def _verifica_archivio(env: Envelope) -> bytes:
-    """Guardie 1-2: envelope ok, decodifica, sha256. Restituisce i byte."""
+def _sha256_file(percorso: Path) -> str:
+    h = hashlib.sha256()
+    with open(percorso, "rb") as handle:
+        for blocco in iter(lambda: handle.read(65536), b""):
+            h.update(blocco)
+    return h.hexdigest()
+
+
+def _verifica_archivio(env: Envelope, max_total_bytes: int) -> bytes:
+    """Guardie 1-2: envelope ok, dimensione plausibile, decodifica, sha256."""
     if not env.ok:
         raise IngestFallito(
             f"source.export non riuscito: {env.codice_errore}",
@@ -96,6 +104,12 @@ def _verifica_archivio(env: Envelope) -> bytes:
     b64 = data.get("archive_b64")
     if not isinstance(b64, str) or not isinstance(atteso, str):
         raise IngestFallito("envelope SRC-01 senza archivio", "ARCHIVE_MANCANTE")
+    # La dimensione del decodificato si conosce dal base64 SENZA allocare: se
+    # gia' il base64 implica un archivio oltre il cap, si rifiuta prima.
+    if (len(b64) * 3) // 4 > max_total_bytes:
+        raise IngestFallito(
+            "archivio oltre il cap gia' dalla dimensione base64", "ARCHIVE_TROPPO_GRANDE"
+        )
     try:
         archivio = base64.b64decode(b64, validate=True)
     except (binascii.Error, ValueError) as exc:
@@ -106,6 +120,36 @@ def _verifica_archivio(env: Envelope) -> bytes:
             "ARCHIVE_SHA256_MISMATCH",
         )
     return archivio
+
+
+def _verifica_provenienza(dest: Path, data: dict[str, Any], byte_size_reale: int) -> None:
+    """Guardia 4: il sorgente estratto deve combaciare con la provenienza
+    dichiarata. Un file in meno o un hash diverso e' un export inaffidabile, non
+    un sorgente da scansionare."""
+    if data.get("byte_size") != byte_size_reale:
+        raise IngestFallito(
+            f"byte_size dichiarato {data.get('byte_size')} != reale {byte_size_reale}",
+            "PROVENIENZA_INCOERENTE",
+        )
+    estratti = [p for p in dest.rglob("*") if p.is_file()]
+    atteso_count = data.get("file_count")
+    if atteso_count is not None and len(estratti) != atteso_count:
+        raise IngestFallito(
+            f"file estratti {len(estratti)} != file_count {atteso_count}",
+            "PROVENIENZA_INCOERENTE",
+        )
+    for voce in data.get("files", []):
+        percorso = dest / voce.get("path", "")
+        if not percorso.is_file():
+            raise IngestFallito(
+                f"file dichiarato mancante dopo l'estrazione: {voce.get('path')}",
+                "PROVENIENZA_INCOERENTE",
+            )
+        if _sha256_file(percorso) != voce.get("sha256"):
+            raise IngestFallito(
+                f"sha256 del file {voce.get('path')} non combacia con la provenienza",
+                "PROVENIENZA_INCOERENTE",
+            )
 
 
 def _estrai_sicuro(
@@ -154,13 +198,15 @@ def sorgente_da_envelope(
     """Estrae in sicurezza il sorgente da un envelope SRC-01 e lo espone come
     directory temporanea, rimossa all'uscita. Solleva ``IngestFallito`` se una
     guardia scatta."""
-    archivio = _verifica_archivio(env)
+    archivio = _verifica_archivio(env, max_total_bytes)
     data = env.data or {}
     tmp = Path(tempfile.mkdtemp(prefix="vspt-src-"))
     try:
         _estrai_sicuro(
             archivio, tmp, max_files=max_files, max_total_bytes=max_total_bytes
         )
+        # Guardia 4: la provenienza che registriamo dev'essere vera.
+        _verifica_provenienza(tmp, data, len(archivio))
         provenienza = Provenienza(
             esito="ok",
             archive_sha256=data.get("archive_sha256", ""),
