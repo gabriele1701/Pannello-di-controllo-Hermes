@@ -1,0 +1,15 @@
+id: hermes-missing-referrer-policy
+info:
+  name: Missing Referrer-Policy header
+  author: hermes-vspt
+  severity: low
+  description: The HTTP response does not include a Referrer-Policy header.
+  tags: misconfig,headers,hermes
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers:
+      - type: dsl
+        dsl:
+          - "status_code >= 200 && status_code < 400 && !contains(tolower(all_headers), 'referrer-policy:')"
