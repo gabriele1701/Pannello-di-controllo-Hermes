@@ -44,7 +44,7 @@ class NucleiCollector(CollectorBase):
     def costruisci_comando(self, ctx: RunContext) -> list[str]:
         argv = [
             "nuclei", "-silent", "-jsonl", "-no-color",
-            "-disable-update-check", "-duc",
+            "-disable-update-check", "-duc", "-disable-redirects",
             "-t", str(ctx.repo_root / "templates_nuclei"),
         ]
         if ctx.http:
