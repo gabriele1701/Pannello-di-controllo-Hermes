@@ -1,54 +1,63 @@
 #!/usr/sbin/nft -f
 #
-# Regole di egress dello scanner VSPT — SCRITTE, DA APPLICARE SULLA VM.
+# Egress dello scanner VSPT — regole HOST-SIDE, nel forward path.
 #
-# Perche' non basta `internal: true`
-# ----------------------------------
-# Una rete docker `internal: true` non ha gateway verso l'esterno: nessuna
-# uscita e' possibile, il che e' ottimo per confinare `app` e `db` — ma chiude
-# anche l'unica eccezione che serve, l'SSH verso l'host della VM (`host:22`).
-# Da una rete internal-only quel pacchetto non ha una via, e il collector
-# `system` non partirebbe mai.
+# NON si applica da sola: i due `define` (subnet della rete `uscita` e IP di
+# host:22) li fornisce assess/net/applica-nftables.sh, che legge
+# VSPT_SUBNET_USCITA / VSPT_HOST_SSH e li antepone a questo file. Il file resta
+# parametrico: nessun IP inventato qui dentro.
 #
-# La messa in opera reale e' quindi: lo scanner su una rete CON gateway, e
-# queste regole nft che restringono l'egress alle SOLE tre destinazioni —
-# `app`, `db`, `host:22`. La garanzia non e' piu' "niente gateway", e' "gateway
-# sorvegliato": default drop, piu' tre permessi espliciti. L'egress self-check
-# del tool resta la tripwire che verifica che queste regole siano in vigore.
+# Perche' host-side e per SUBNET (non per IP per-container)
+# --------------------------------------------------------
+# Le regole stanno sull'HOST della VM, nel forward path — il piano dove Docker
+# instrada il traffico container->esterno. Filtrano per la SUBNET della rete
+# `uscita` (valore fisso dal compose, ipam), non per l'IP del singolo container,
+# che cambia a ogni `up`. La policy NON e' un drop globale (spezzerebbe ogni
+# forwarding dell'host): si lascia passare cio' che NON viene dalla subnet
+# uscita, e per cio' che ne viene si concede SOLO host:22, established/related e
+# DNS; tutto il resto e' DROP. L'enforcement vive qui, non in un if di Python.
 #
-# Vanno applicate dove vede il traffico dello scanner: sull'host della VM
-# (filtrando per l'IP del container scanner) o, con CAP_NET_ADMIN, dentro il
-# container stesso. Applicare con:  nft -f assess/net/nftables-assess.nft
+# Caveat: backend nftables di Docker (Docker 29)
+# ----------------------------------------------
+# Docker 29 usa il backend nftables e crea catene proprie (es. `ip docker`,
+# `inet docker-bridge`) con i suoi hook. Questa tabella e' SEPARATA
+# (`ip assess_egress`) con un hook forward a priorita' NEGATIVA: gira PRIMA
+# delle catene di Docker, e un `drop` e' terminale (ferma l'intera valutazione),
+# quindi vince anche se Docker piu' avanti riaccettasse. Due conseguenze
+# pratiche per l'operatore:
+#   * un restart del demone o un `docker network` puo' ricreare le reti: se la
+#     subnet di `uscita` cambia, RIAPPLICARE (applica-nftables.sh e' idempotente);
+#   * l'SSH verso l'host passa spesso per l'INPUT dell'host (destinazione = il
+#     gateway della rete), non per il forward: in quel caso la regola host:22 qui
+#     e' innocua e la restrizione che conta resta il DROP dell'uscita verso
+#     Internet. Se invece host:22 e' raggiunto via forward, la regola lo permette.
 #
-# I valori <...> sono DA_COMPILARE con quelli della VM (venerdi').
+# Famiglia `ip` (solo IPv4): la rete `uscita` e' IPv4 (ipam /24). Tenendo la
+# tabella in famiglia `ip`, i pacchetti IPv6 forwardati dall'host NON entrano in
+# questa catena e non vengono toccati: nessun effetto collaterale sul resto.
 
-define SCANNER_IP   = <IP_DEL_CONTAINER_SCANNER>   # es. 172.30.0.5
-define APP_IP       = <IP_DI_app>                  # es. 172.30.0.2
-define DB_IP        = <IP_DI_db>                    # es. 172.30.0.3
-define HOST_VM_IP   = <IP_HOST_VM_GATEWAY>          # host.docker.internal
+table ip assess_egress {
+    chain forward {
+        type filter hook forward priority -5; policy accept;
 
-table inet assess_egress {
-    chain output {
-        # Default DROP: tutto cio' che non e' esplicitamente permesso cade.
-        type filter hook output priority 0; policy drop;
+        # Solo il traffico ORIGINATO dalla subnet `uscita` dello scanner ci
+        # riguarda. Tutto il resto prosegue: non e' compito di queste regole.
+        ip saddr != $SUBNET_USCITA accept
 
-        # Connessioni gia' aperte e traffico di loopback.
+        # Da qui in poi: sorgente DENTRO la subnet uscita.
+
+        # Connessioni gia' stabilite e il loro traffico di ritorno.
         ct state established,related accept
-        oifname "lo" accept
 
-        # DNS verso il resolver interno di docker, per risolvere i nomi di
-        # servizio app/db (il resolver sta su 127.0.0.11 nel container).
-        ip daddr 127.0.0.11 udp dport 53 accept
-        ip daddr 127.0.0.11 tcp dport 53 accept
+        # DNS: risoluzione dei nomi verso un resolver raggiungibile.
+        udp dport 53 accept
+        tcp dport 53 accept
 
-        # (1) verso l'app, solo HTTP applicativo
-        ip daddr $APP_IP tcp dport 8000 accept
-        # (2) verso il db, solo PostgreSQL
-        ip daddr $DB_IP tcp dport 5432 accept
-        # (3) verso l'host della VM, solo SSH
-        ip daddr $HOST_VM_IP tcp dport 22 accept
+        # L'UNICA destinazione applicativa consentita in uscita: host:22 (SSH).
+        ip daddr $HOST_SSH tcp dport 22 accept
 
-        # Tutto il resto e' gia' negato dalla policy. Nessuna uscita verso
-        # Internet: e' qui che vive l'enforcement, non in un if di Python.
+        # Tutto il resto dalla subnet uscita e' negato: nessuna uscita verso
+        # Internet. Si logga il drop per diagnosi (rate dal kernel).
+        log prefix "assess_egress_drop " level info drop
     }
 }

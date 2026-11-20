@@ -52,6 +52,24 @@ def _trova_openapi(repo_root: Path) -> Path | None:
     return p if p.is_file() else None
 
 
+def filtra_collectors(collectors, nomi):
+    """Restringe i collector ai soli ``nomi``, mantenendo l'ordine standard.
+
+    Un nome sconosciuto e' un **errore** (fail-closed): se l'operatore chiede
+    ``--only sistema`` per un refuso, e' meglio fermarsi che eseguire di nascosto
+    un sottoinsieme diverso da quello voluto. I collector esclusi non vengono
+    nemmeno istanziati nel run: non sono "saltati", semplicemente non chiesti."""
+    noti = {c.name for c in collectors}
+    sconosciuti = [n for n in nomi if n not in noti]
+    if sconosciuti:
+        raise ValueError(
+            "collector sconosciuti: " + ", ".join(sconosciuti)
+            + " — disponibili: " + ", ".join(c.name for c in collectors)
+        )
+    scelti = set(nomi)
+    return [c for c in collectors if c.name in scelti]
+
+
 def canale_ssh(cfg: config.ConfigScope) -> WrapperSsh | None:
     """Il wrapper SSH se la config lo definisce (sezione [ssh] con un host),
     altrimenti None.
@@ -94,6 +112,13 @@ def comando_run(args: argparse.Namespace) -> int:
     )
 
     collectors = collectors_standard()
+    if args.only:
+        try:
+            collectors = filtra_collectors(collectors, args.only)
+        except ValueError as exc:
+            print(f"selezione collector non valida: {exc}", file=sys.stderr)
+            return 2
+
     print(f"vspt {__version__} — target pinnato: {target} ({cfg.target.base_url})")
     print("egress self-check…", file=sys.stderr)
     try:
@@ -156,6 +181,11 @@ def costruisci_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--config", default="scope.toml", help="file di scope (toml)")
     p_run.add_argument("--out-dir", default=None, help="directory di output del report")
     p_run.add_argument("--repo-root", default=".", help="radice del repo del pannello")
+    p_run.add_argument(
+        "--only", nargs="+", metavar="NAME", default=None,
+        help="esegue SOLO i collector indicati (es. --only system); gli altri "
+             "non vengono nemmeno tentati. Un nome sconosciuto e' un errore.",
+    )
     p_run.set_defaults(func=comando_run)
 
     p_rep = sub.add_parser("report", help="rigenera l'HTML dal JSON esistente")
