@@ -25,6 +25,7 @@ from assess.report import html_report, json_report
 from assess.runner import collectors_standard, esegui_run
 from assess.wrappers.ssh import WrapperSsh
 from assess.wrappers.http_session import SessioneHttpError, apri_sessione
+from assess.scope import egress_self_check
 
 #: Una riga di "cosa fa", per l'output sequenziale. Chiave = name del collector.
 _DESCRIZIONE = {
@@ -108,21 +109,13 @@ def comando_run(args: argparse.Namespace) -> int:
             print(f"selezione collector non valida: {exc}", file=sys.stderr)
             return 2
 
-    cookie_sessione = None
-    if any(c.name in {"nuclei", "sqlmap"} for c in collectors):
-        try:
-            cookie_sessione = apri_sessione(cfg.target)
-        except SessioneHttpError as exc:
-            print(f"login HTTP non riuscito: {exc}", file=sys.stderr)
-            return 2
-
     ctx = RunContext(
         config=cfg,
         repo_root=repo_root,
         target=target,
         base_url=cfg.target.base_url,
         inventario=inventario,
-        http=cookie_sessione,  # cookie autenticato; mai scritto nel report
+        http=None,  # valorizzato solo dopo il self-check di rete
         ssh=canale_ssh(cfg),  # il trasporto SSH live, se la config lo definisce
         db=None,     # nessuna connessione DB (fuori da questo step)
         commit_pannello=_commit_pannello(repo_root),
@@ -133,10 +126,23 @@ def comando_run(args: argparse.Namespace) -> int:
     print(f"vspt {__version__} — target pinnato: {target} ({cfg.target.base_url})")
     print("egress self-check…", file=sys.stderr)
     try:
-        esecuzione = esegui_run(ctx, collectors)
+        egress_self_check(
+            cfg.egress.sentinelle, timeout=cfg.egress.timeout_s
+        )
     except scope.EgressAperto as exc:
         print(f"RUN NON AVVIATO — {exc}", file=sys.stderr)
         return 2
+
+    # Il controllo di confinamento precede qualunque richiesta HTTP, incluso
+    # il login. Il cookie resta in memoria e non viene mai scritto nel report.
+    if any(c.name in {"nuclei", "sqlmap"} for c in collectors):
+        try:
+            ctx.http = apri_sessione(cfg.target)
+        except SessioneHttpError as exc:
+            print(f"login HTTP non riuscito: {exc}", file=sys.stderr)
+            return 2
+
+    esecuzione = esegui_run(ctx, collectors, salta_egress=True)
 
     totale = len(esecuzione.metadati.checks)
     for i, c in enumerate(esecuzione.metadati.checks, start=1):
