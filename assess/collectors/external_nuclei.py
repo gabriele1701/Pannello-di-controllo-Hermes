@@ -7,6 +7,7 @@ nessun aggiornamento o download durante il run.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 
@@ -36,7 +37,10 @@ class NucleiCollector(CollectorBase):
         base = (ctx.base_url or "").rstrip("/")
         visti: list[str] = []
         for endpoint in ctx.inventario:
-            url = f"{base}{endpoint.path}"
+            # OpenAPI path parameters are replaced with a harmless sample value;
+            # literal braces are not valid request targets for the scanner.
+            path = re.sub(r"\\{[^{}]+\\}", "1", endpoint.path)
+            url = f"{base}{path}"
             if url not in visti:
                 visti.append(url)
         return visti
