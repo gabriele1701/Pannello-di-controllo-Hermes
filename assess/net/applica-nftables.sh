@@ -53,4 +53,4 @@ if nft list table ip assess_egress >/dev/null 2>&1; then
 fi
 printf '%s' "$intestazione" | cat - "$NFT_FILE" | nft -f -
 
-echo "applica-nftables: attiva 'ip assess_egress' — saddr ${SUBNET} -> solo host:22 (${HOST_SSH}) + DNS + established; DROP il resto."
+echo "applica-nftables: attiva 'ip assess_egress' — saddr ${SUBNET} -> solo host:22 (${HOST_SSH}) + established; DROP il resto."

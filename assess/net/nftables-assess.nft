@@ -14,8 +14,8 @@
 # `uscita` (valore fisso dal compose, ipam), non per l'IP del singolo container,
 # che cambia a ogni `up`. La policy NON e' un drop globale (spezzerebbe ogni
 # forwarding dell'host): si lascia passare cio' che NON viene dalla subnet
-# uscita, e per cio' che ne viene si concede SOLO host:22, established/related e
-# DNS; tutto il resto e' DROP. L'enforcement vive qui, non in un if di Python.
+# uscita, e per cio' che ne viene si concede SOLO host:22 ed
+# established/related; tutto il resto e' DROP. L'enforcement vive qui, non in un if di Python.
 #
 # Caveat: backend nftables di Docker (Docker 29)
 # ----------------------------------------------
@@ -48,10 +48,6 @@ table ip assess_egress {
 
         # Connessioni gia' stabilite e il loro traffico di ritorno.
         ct state established,related accept
-
-        # DNS: risoluzione dei nomi verso un resolver raggiungibile.
-        udp dport 53 accept
-        tcp dport 53 accept
 
         # L'UNICA destinazione applicativa consentita in uscita: host:22 (SSH).
         ip daddr $HOST_SSH tcp dport 22 accept

@@ -126,8 +126,9 @@ Il confinamento è a due livelli, e **quello che conta è la rete**:
    partirebbe mai. Perciò lo scanner sta anche su una seconda rete *con* gateway
    (`uscita`), con **subnet fissa** (`ipam`, da `VSPT_SUBNET_USCITA`), ristretta
    dalle regole **`net/nftables-assess.nft`** applicate **host-side** nel forward
-   path: dalla subnet `uscita` si concede SOLO `host:22`, `established/related` e
-   DNS, e si fa `drop` del resto. Il filtro è **per subnet**, non per IP
+   path: dalla subnet `uscita` si concede SOLO `host:22` ed
+   `established/related`, e si fa `drop` del resto. Non si autorizza DNS generico:
+   per il primo test `system` non serve traffico DNS in uscita. Il filtro è **per subnet**, non per IP
    per-container (che cambiano a ogni `up`): la stessa `VSPT_SUBNET_USCITA`
    alimenta compose e nft, così rete e filtro concordano. La garanzia è "gateway
    sorvegliato", non "nessun gateway". (Config **scritta, da applicare sulla
