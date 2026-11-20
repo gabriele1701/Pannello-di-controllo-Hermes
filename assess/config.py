@@ -21,6 +21,7 @@ permissivo: ogni via d'uscita da un dato mancante e' un'eccezione.
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,6 +50,18 @@ class ConfigTarget:
     #: Utente operatore demo con cui fare login.
     operator_user: str = ""
 
+    def password(self) -> str | None:
+        """La password dell'operatore demo, risolta dalla variabile nominata in
+        ``password_env``. ``None`` se non impostata (o vuota): il login HTTP e'
+        **opzionale**. La sua assenza non e' un errore di caricamento — rende i
+        collector esterni NOT_RUN, perche' il loro canale non c'e'."""
+        return os.environ.get(self.password_env) or None
+
+    def login_disponibile(self) -> bool:
+        """Vero se c'e' abbastanza per un login HTTP: un utente operatore **e**
+        la sua password nell'ambiente. Senza, il canale HTTP non si costruisce."""
+        return bool(self.operator_user and self.password())
+
 
 @dataclass(frozen=True, slots=True)
 class ConfigDb:
@@ -56,6 +69,13 @@ class ConfigDb:
 
     #: Nome della variabile d'ambiente che porta il DSN di ``hermes_assess``.
     dsn_env: str = "ASSESS_DB_DSN"
+
+    def dsn(self) -> str | None:
+        """Il DSN di ``hermes_assess``, risolto dalla variabile nominata in
+        ``dsn_env``. ``None`` se non impostato: la connessione DB e'
+        **opzionale** e la sua assenza rende il collector ``postgres`` NOT_RUN,
+        non un errore di caricamento."""
+        return os.environ.get(self.dsn_env) or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +219,16 @@ def carica(percorso: str | Path) -> ConfigScope:
         key_path=str(ssh_raw.get("key_path", "")),
         known_hosts_path=str(ssh_raw.get("known_hosts_path", "")),
     )
+    # Fail-closed sul canale SSH: e' opzionale finche' non lo si usa (nessun
+    # host -> il collector `system` resta NOT_RUN), ma un [ssh] a meta' e' un
+    # errore. Se c'e' un host, servono chiave e known_hosts: un canale SSH senza
+    # identita' dell'host fissata non si apre con StrictHostKeyChecking=yes, e un
+    # "quasi configurato" che fallisce a runtime e' peggio di un rifiuto netto.
+    if ssh.host and not (ssh.key_path and ssh.known_hosts_path):
+        raise ConfigIncompleta(
+            "ssh: con 'host' impostato servono anche 'key_path' e "
+            "'known_hosts_path'. Per non usare l'SSH, lascia [ssh] senza 'host'."
+        )
     out_dir = str(dati.get("out_dir", "assess/out"))
 
     return ConfigScope(target=target, egress=egress, db=db, ssh=ssh, out_dir=out_dir)

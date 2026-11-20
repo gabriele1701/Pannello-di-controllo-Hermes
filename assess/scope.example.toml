@@ -8,6 +8,12 @@
 # I SEGRETI NON STANNO QUI. Password, DSN del DB e chiave SSH arrivano da
 # variabili d'ambiente o da file montati come secret; qui compare solo il
 # NOME della variabile. Un segreto in questo file finirebbe nel versionamento.
+#
+# PRIMO TEST LIVE (solo collector `system`, via SSH):
+#   - compila [ssh].host (e tieni operator_user con un valore demo reale);
+#   - NON serve impostare ASSESS_TARGET_PASSWORD ne' ASSESS_DB_DSN: sono
+#     OPZIONALI, e la loro assenza rende i collector HTTP/DB semplicemente
+#     NOT_RUN (vedi `vspt run --only system`). Non e' un errore: e' la verita'.
 # ---------------------------------------------------------------------------
 
 [target]
@@ -20,8 +26,11 @@ base_url = "http://app:8000"
 # esterno viene fatto su questi nomi.
 allowlist = ["app"]
 
-# Utente operatore demo con cui fare login sull'app. La PASSWORD non e' qui:
-# sta nella variabile d'ambiente nominata in password_env.
+# Utente operatore demo con cui fare login sull'app. Mettici il VALORE DEMO
+# REALE (l'utente che esiste sull'istanza demo), non un placeholder: e' un
+# identificatore, non un segreto. La PASSWORD, quella si', non e' qui: sta nella
+# variabile d'ambiente nominata in password_env, ed e' opzionale (assente -> i
+# collector HTTP restano NOT_RUN).
 operator_user = "DA_COMPILARE"
 password_env = "ASSESS_TARGET_PASSWORD"
 

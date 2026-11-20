@@ -30,18 +30,27 @@ Implementato e testato **senza VM né target**:
   ora con `source.export`;
 - **recupero sorgente** (`source_ingest.py`) — ingest sicuro del `tar.gz`
   esportato (sha, cap, filter data, provenienza) per semgrep/pip-audit;
-- **config di rete** (`net/nftables-assess.nft`, `compose.assess.yaml`) —
-  **scritta**, da applicare sulla VM;
-- **runner + CLI** — orchestrazione, metadati, output sequenziale;
+- **trasporto SSH live del collector `system`** (`wrappers/ssh.py`,
+  `collectors/internal_system.py`, `cli.py`) — il primo collector che va dal
+  vivo: la CLI costruisce il canale SSH dalla config e lo passa al collector;
+- **config di rete per il primo test** (`net/nftables-assess.nft`,
+  `net/applica-nftables.sh`, `compose.assess.yaml`) — override con bind mount
+  dei secret, subnet fissa per la rete `uscita`, e regole nft **host-side** per
+  subnet; **scritte, da applicare sulla VM**;
+- **runner + CLI** — orchestrazione, metadati, output sequenziale, selezione
+  `--only <collector>` per eseguire un sottoinsieme;
 - **test** (`tests/`) — parser di tutti i collector (zero/malformato/condizione
   non valida), contratto SSH (client + wrapper come subprocess), scope, modello,
   normalize, report.
 
-Resta per la messa in opera (**venerdì, sulla VM**):
+Resta per la messa in opera (**sulla VM**):
 
-- collegare `_esegui_live` al processo reale (subprocess/SSH/psycopg);
+- **primo test live: `system`** — il codice è pronto (`--only system`); sulla VM
+  si preparano chiave/known_hosts, l'utente `assess` col `ForceCommand`, e si
+  applicano le nft host-side (`net/applica-nftables.sh`). Procedura e checkpoint
+  nella sezione *«Primo test live del collector `system`»*;
+- collegare gli altri `_esegui_live` al processo reale (HTTP/psycopg/sorgente);
 - applicare la migrazione `0006` e creare `hermes_assess`;
-- installare il `ForceCommand` (`vspt-ssh-wrapper`, restrict) e le regole `nftables`;
 - e2e confinato contro l'istanza demo.
 
 ## Esecuzione
@@ -62,6 +71,10 @@ senza toccare il packaging del pannello.
 Sottocomandi: `run` (esegue e produce il report), `report` (rigenera l'HTML dal
 JSON), `update-feeds` (aggiornamento template/CVE — **separato**, esce in rete,
 non necessario a un run confinato).
+
+`run` accetta `--only <collector>…` per eseguire un **sottoinsieme**: `vspt run
+--only system` esegue solo `system`; gli altri non vengono nemmeno tentati. Un
+nome sconosciuto e' un errore (fail-closed), non un run silenziosamente ridotto.
 
 ## Configurazione: `scope.toml`
 
@@ -87,14 +100,15 @@ variabile d'ambiente che li porta:
 
 Il report redige qualunque valore sensibile.
 
-> **TODO (valori dalla VM, venerdì):**
-> - `ssh.host` ← **IP/hostname della VM** (o `host.docker.internal`);
-> - `ASSESS_DB_DSN` ← **DSN di `hermes_assess`**, es.
->   `postgresql://hermes_assess:<password>@db:5432/hermes_panel` (il ruolo lo
->   crea la migrazione `0006`, applicata venerdì);
-> - `ASSESS_TARGET_PASSWORD` ← password dell'operatore demo (`HERMES_SEED_DEMO=1`);
-> - in `net/nftables-assess.nft`: gli IP di `app`, `db`, dello scanner e
->   dell'host VM.
+> **TODO (valori dalla VM):**
+> - `ssh.host` ← **IP/hostname della VM** (o `host.docker.internal`) — serve per
+>   il primo test `system`;
+> - `VSPT_SUBNET_USCITA` ← una **/24 non usata** per la rete `uscita`, e
+>   `VSPT_HOST_SSH` ← l'**IP di host:22** dai container, per `applica-nftables.sh`;
+> - *(per gli step successivi, non per il test `system`)* `ASSESS_DB_DSN` ←
+>   **DSN di `hermes_assess`** (il ruolo lo crea la migrazione `0006`), e
+>   `ASSESS_TARGET_PASSWORD` ← password dell'operatore demo (`HERMES_SEED_DEMO=1`).
+>   Assenti, i collector HTTP/DB restano NOT_RUN.
 
 ## Topologia e confinamento (Opzione B)
 
@@ -106,13 +120,18 @@ black-box (HTTP, nessun accesso al sorgente), non la distanza di rete.
 Il confinamento è a due livelli, e **quello che conta è la rete**:
 
 1. **Enforcement (autorevole): la rete.** `internal: true` confina `app` e `db`
-   (nessuna uscita), ma **da solo non regge l'eccezione SSH**: una rete
-   internal-only non ha gateway, quindi non può raggiungere `host:22` e il
-   collector `system` non partirebbe mai. Perciò lo scanner sta anche su una
-   seconda rete *con* gateway (`uscita`), ristretta dalle regole
-   **`net/nftables-assess.nft`**: default `drop` più i soli permessi verso
-   `app:8000`, `db:5432`, `host:22`. La garanzia è "gateway sorvegliato", non
-   "nessun gateway". (Config **scritta, da applicare sulla VM**.)
+   (nessuna uscita) e lo scanner li raggiunge lì, per nome di servizio. Ma
+   `internal` **da solo non regge l'eccezione SSH**: una rete internal-only non
+   ha gateway, quindi non può raggiungere `host:22` e il collector `system` non
+   partirebbe mai. Perciò lo scanner sta anche su una seconda rete *con* gateway
+   (`uscita`), con **subnet fissa** (`ipam`, da `VSPT_SUBNET_USCITA`), ristretta
+   dalle regole **`net/nftables-assess.nft`** applicate **host-side** nel forward
+   path: dalla subnet `uscita` si concede SOLO `host:22`, `established/related` e
+   DNS, e si fa `drop` del resto. Il filtro è **per subnet**, non per IP
+   per-container (che cambiano a ogni `up`): la stessa `VSPT_SUBNET_USCITA`
+   alimenta compose e nft, così rete e filtro concordano. La garanzia è "gateway
+   sorvegliato", non "nessun gateway". (Config **scritta, da applicare sulla
+   VM** con `net/applica-nftables.sh`.)
 2. **Tripwire (nel codice):** l'egress self-check prova sentinelle esterne
    (`1.1.1.1:53`, `8.8.8.8:443`, …) e, se *anche una sola* risponde, **rifiuta
    di partire** (uscita non-zero). Non dimostra che ogni uscita sia chiusa:
@@ -186,6 +205,60 @@ cosa il client chieda. Il wrapper risponde solo ai verbi dell'allowlist, in
 sola lettura e senza privilegi; ogni altra stringa è negata. Il client-side non
 c'entra con questa garanzia: è `sshd` ad applicarla.
 
+## Primo test live del collector `system` (sulla VM)
+
+Il primo collector che va dal vivo è `system`, via SSH. Gli altri (HTTP, DB,
+sorgente) restano per gli step successivi: qui si abilita **solo** `system`, con
+`--only`, e il resto resta NOT_RUN per scelta, non per errore.
+
+**Cosa prepara l'operatore sulla VM (non è compito del tool):** la chiave
+`scanner_ed25519` e il `known_hosts` in `/etc/hermes-vspt/secrets/`, l'utente
+`assess` con `restrict` + `ForceCommand` (vedi sopra), e le regole nft host-side.
+
+**Messa in opera:**
+
+```bash
+# 1) scope.toml: compila [ssh].host (e operator_user con l'utente demo reale).
+#    ASSESS_TARGET_PASSWORD / ASSESS_DB_DSN NON servono: i collector HTTP/DB
+#    resteranno NOT_RUN.
+cp assess/scope.example.toml assess/scope.toml && $EDITOR assess/scope.toml
+
+# 2) scegli una /24 non usata per la rete `uscita` e applica le nft host-side
+#    (la stessa subnet alimenta compose e nft). HOST_SSH = IP host:22 dai container.
+export VSPT_SUBNET_USCITA=10.77.42.0/24
+sudo -E VSPT_HOST_SSH=10.0.2.2 assess/net/applica-nftables.sh
+
+# 3) esegui SOLO il collector system (lo scanner non esce verso Internet):
+VSPT_SUBNET_USCITA=$VSPT_SUBNET_USCITA \
+  docker compose -f compose.yaml -f assess/compose.assess.yaml --profile assess \
+  run --rm scanner run --config /scope/scope.toml --only system
+```
+
+**Checkpoint (cosa guardare, in ordine):**
+
+1. **Egress self-check passa** → il run parte. Se *fallisce*, le nft non sono
+   applicate (o la subnet non combacia): è la tripwire che fa il suo lavoro, non
+   un falso positivo. Applica/riapplica `applica-nftables.sh` e riprova.
+2. **`system` COMPLETATO** nel report, con le attestazioni sulle porte in
+   ascolto (attese `app:8000`, `db:5432`; ogni altra è segnalata).
+3. **Gli altri collector NOT_RUN** con motivo esplicito (`--only system`): nel
+   report risultano saltati, non superati.
+4. **Nessuna uscita verso Internet**: il contatore del `drop` nelle nft
+   (`nft list table ip assess_egress`) resta a zero per traffico legittimo e
+   sale solo se qualcosa tenta un'uscita non prevista.
+
+**Regole nft host-side — applicazione e caveat.** `net/applica-nftables.sh` è
+idempotente: legge `VSPT_SUBNET_USCITA` e `VSPT_HOST_SSH`, controlla la sintassi
+(`nft -c`) prima di toccare lo stato, rimuove ed riapplica la tabella
+`ip assess_egress`. Il filtro è **per subnet** e vive nel **forward path**
+dell'host. *Caveat Docker 29 (backend nftables):* Docker gestisce catene proprie;
+questa tabella è separata, con hook forward a priorità negativa (gira prima) e
+`drop` terminale (vince). Un restart del demone o un `docker network` può
+ricreare le reti: se la subnet di `uscita` cambia, **riapplica**. L'SSH verso
+l'host passa spesso per l'INPUT (destinazione = gateway), non per il forward: in
+quel caso la regola `host:22` è innocua e ciò che conta resta il `drop`
+dell'uscita verso Internet.
+
 ## Il report
 
 Due file in `out/`:
@@ -234,13 +307,17 @@ standard library.
 python -m pytest assess/tests/ -q
 ```
 
-125 test su fixture (`tests/fixtures/`): nessuna rete, nessun target. Coprono i
-parser di tutti i collector (risultati, zero, malformato, condizione non
-valida), il contratto SSH (client + `vspt-ssh-wrapper` invocato come
-subprocess), `source.export` e l'**ingest sicuro** (archivio benigno estratto;
-path traversal, symlink, hardlink, bomb/oversize, troppi file, sha mismatch
-tutti rifiutati), lo scope guard, il modello, la normalizzazione e il report.
-Richiedono `jsonschema` (già in `pyproject [dev]`).
+167 test su fixture (`tests/fixtures/`): nessuna rete, nessun target reale.
+Coprono i parser di tutti i collector (risultati, zero, malformato, condizione
+non valida), il contratto SSH (client + `vspt-ssh-wrapper` invocato come
+subprocess) e il trasporto SSH live con `subprocess` **mockato** (argv di
+hardening, guasti, `_esegui_live`), `source.export` e l'**ingest sicuro**
+(archivio benigno estratto; path traversal, symlink, hardlink, bomb/oversize,
+troppi file, sha mismatch tutti rifiutati), le **credenziali opzionali** e il
+fail-closed su `[ssh]`, la selezione `--only` e l'onestà del NOT_RUN, lo scope
+guard, il modello, la normalizzazione e il report. Un test verifica anche che
+l'override `compose.assess.yaml` sia valido (`docker compose config`) e si salta
+da solo dove docker non c'è. Richiedono `jsonschema` (già in `pyproject [dev]`).
 
 La CI del pannello esegue `tests/` (la suite del backend), non `assess/tests/`:
 quest'ultima si lancia a mano col comando sopra.
@@ -249,9 +326,15 @@ quest'ultima si lancia a mano col comando sopra.
 
 Si spedisce il `Dockerfile`, non un'immagine pre-costruita: il build installa
 nuclei/sqlmap/semgrep/pip-audit da upstream a versioni pinnate (vedi
-`LICENSES/NOTICE.md`). `compose.assess.yaml` definisce il servizio scanner su
-rete `internal: true`, da usare come override del compose del pannello:
+`LICENSES/NOTICE.md`). `compose.assess.yaml` è un **override** del compose del
+pannello: mette lo scanner su `interna` (con `app`/`db`) e `uscita` (solo
+`host:22`), monta i secret read-only e richiede `VSPT_SUBNET_USCITA` (la subnet
+fissa della rete `uscita`, la stessa delle nft). Lo scanner **non** parte da
+solo (`profiles: assess`, nessuna scansione al boot): lo si lancia col
+sottocomando `run`.
 
 ```bash
-docker compose -f compose.yaml -f assess/compose.assess.yaml --profile assess up scanner
+VSPT_SUBNET_USCITA=10.77.42.0/24 \
+  docker compose -f compose.yaml -f assess/compose.assess.yaml --profile assess \
+  run --rm scanner run --config /scope/scope.toml --only system
 ```
