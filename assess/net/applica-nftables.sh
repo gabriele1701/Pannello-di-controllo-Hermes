@@ -9,10 +9,10 @@
 # senza toccare nulla (fail-closed).
 #
 # Uso:
-#   VSPT_SUBNET_USCITA=10.77.42.0/24 VSPT_HOST_SSH=10.0.2.2 \
+#   VSPT_SUBNET_USCITA=10.77.42.0/24 VSPT_HOST_SSH=172.17.0.1 \
 #     sudo -E assess/net/applica-nftables.sh
 # oppure, per argomenti:
-#   sudo assess/net/applica-nftables.sh 10.77.42.0/24 10.0.2.2
+#   sudo assess/net/applica-nftables.sh 10.77.42.0/24 172.17.0.1
 #
 # VSPT_SUBNET_USCITA e' LA STESSA variabile che alimenta la rete `uscita` nel
 # compose (ipam.subnet): rete e filtro restano d'accordo per costruzione.
@@ -46,11 +46,10 @@ if ! printf '%s' "$intestazione" | cat - "$NFT_FILE" | nft -c -f - 2>/tmp/assess
     errore "le regole non superano il controllo di sintassi (nft -c)"
 fi
 
-# Idempotente: se la tabella esiste gia', la si rimuove e riapplica, cosi' una
-# riesecuzione converge sempre allo stesso stato invece di accumulare regole.
-if nft list table ip assess_egress >/dev/null 2>&1; then
-    nft delete table ip assess_egress
-fi
+# Applicazione atomica E idempotente: il file di regole inizia con
+# `add table; delete table; table {...}`, quindi una singola transazione nft -f
+# sostituisce la tabella senza alcuna finestra in cui lo scanner resti senza
+# filtro. NON fare un delete separato prima (aprirebbe quell'intervallo).
 printf '%s' "$intestazione" | cat - "$NFT_FILE" | nft -f -
 
 echo "applica-nftables: attiva 'ip assess_egress' — saddr ${SUBNET} -> solo host:22 (${HOST_SSH}) + established; DROP il resto."

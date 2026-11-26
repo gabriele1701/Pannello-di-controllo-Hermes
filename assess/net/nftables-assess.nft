@@ -1,59 +1,73 @@
 #!/usr/sbin/nft -f
 #
-# Egress dello scanner VSPT — regole HOST-SIDE, nel forward path.
+# Confinamento di rete dello scanner VSPT — regole HOST-SIDE.
 #
 # NON si applica da sola: i due `define` (subnet della rete `uscita` e IP di
 # host:22) li fornisce assess/net/applica-nftables.sh, che legge
 # VSPT_SUBNET_USCITA / VSPT_HOST_SSH e li antepone a questo file. Il file resta
 # parametrico: nessun IP inventato qui dentro.
 #
-# Perche' host-side e per SUBNET (non per IP per-container)
-# --------------------------------------------------------
-# Le regole stanno sull'HOST della VM, nel forward path — il piano dove Docker
-# instrada il traffico container->esterno. Filtrano per la SUBNET della rete
-# `uscita` (valore fisso dal compose, ipam), non per l'IP del singolo container,
-# che cambia a ogni `up`. La policy NON e' un drop globale (spezzerebbe ogni
-# forwarding dell'host): si lascia passare cio' che NON viene dalla subnet
-# uscita, e per cio' che ne viene si concede SOLO host:22 ed
-# established/related; tutto il resto e' DROP. L'enforcement vive qui, non in un if di Python.
+# Due catene, e perche'
+# ---------------------
+# L'endpoint SSH dello scanner e' un indirizzo LOCALE della VM (es. il gateway
+# del bridge Docker): `ip route get` lo classifica `local`, quindi quel traffico
+# e' consegnato all'host via INPUT, NON via forward. Un filtro sul solo forward
+# non lo vedrebbe. Servono percio' due catene:
+#   * input   — governa lo scanner->host locale: concede SOLO host:22 e nega il
+#               resto (lo scanner non deve raggiungere altri servizi dell'host);
+#   * forward — governa lo scanner->instradato: nega l'uscita verso Internet.
+# app e db escono dalla rete `interna` con sorgente diversa dalla subnet
+# `uscita`, quindi la prima regola di ogni catena li lascia intatti.
+#
+# Filtro per SUBNET, non per IP per-container
+# -------------------------------------------
+# Si filtra per la SUBNET della rete `uscita` (valore fisso dal compose, ipam),
+# non per l'IP del singolo container, che cambia a ogni `up`. La stessa
+# VSPT_SUBNET_USCITA alimenta compose e nft: rete e filtro restano d'accordo.
+# La policy NON e' un drop globale (spezzerebbe il resto dell'host): cio' che non
+# viene dalla subnet uscita prosegue; cio' che ne viene e' concesso solo per le
+# eccezioni sopra, il resto e' DROP. L'enforcement vive qui, non in un if Python.
 #
 # Caveat: backend nftables di Docker (Docker 29)
 # ----------------------------------------------
-# Docker 29 usa il backend nftables e crea catene proprie (es. `ip docker`,
-# `inet docker-bridge`) con i suoi hook. Questa tabella e' SEPARATA
-# (`ip assess_egress`) con un hook forward a priorita' NEGATIVA: gira PRIMA
-# delle catene di Docker, e un `drop` e' terminale (ferma l'intera valutazione),
-# quindi vince anche se Docker piu' avanti riaccettasse. Due conseguenze
-# pratiche per l'operatore:
-#   * un restart del demone o un `docker network` puo' ricreare le reti: se la
-#     subnet di `uscita` cambia, RIAPPLICARE (applica-nftables.sh e' idempotente);
-#   * l'SSH verso l'host passa spesso per l'INPUT dell'host (destinazione = il
-#     gateway della rete), non per il forward: in quel caso la regola host:22 qui
-#     e' innocua e la restrizione che conta resta il DROP dell'uscita verso
-#     Internet. Se invece host:22 e' raggiunto via forward, la regola lo permette.
+# Docker 29 usa il backend nftables con catene proprie. Questa tabella e'
+# SEPARATA (`ip assess_egress`), con hook a priorita' NEGATIVA (-5): gira PRIMA
+# delle catene di Docker, e un `drop` e' terminale (ferma la valutazione), quindi
+# vince anche se Docker piu' avanti riaccettasse. Se un restart del demone o un
+# `docker network` ricrea la rete `uscita` con una subnet diversa, RIAPPLICARE
+# (applica-nftables.sh e' idempotente).
 #
 # Famiglia `ip` (solo IPv4): la rete `uscita` e' IPv4 (ipam /24). Tenendo la
-# tabella in famiglia `ip`, i pacchetti IPv6 forwardati dall'host NON entrano in
-# questa catena e non vengono toccati: nessun effetto collaterale sul resto.
+# tabella in famiglia `ip`, i pacchetti IPv6 dell'host non entrano in queste
+# catene e non vengono toccati.
+#
+# Applicazione atomica e idempotente: `add` garantisce che `delete` non fallisca
+# mai alla prima esecuzione; la ricreazione avviene in un'UNICA transazione
+# nft -f, senza finestra in cui la tabella non c'e'. Lo script NON deve fare un
+# delete separato prima.
 
+add table ip assess_egress
+delete table ip assess_egress
 table ip assess_egress {
+    chain input {
+        type filter hook input priority -5; policy accept;
+
+        # Solo lo scanner (subnet `uscita`) ci riguarda; il resto dell'INPUT
+        # dell'host (es. SSH admin da un'altra rete) prosegue intatto.
+        ip saddr != $SUBNET_USCITA accept
+
+        # Da qui: sorgente DENTRO la subnet uscita, destinata all'host.
+        ct state established,related accept
+        ip daddr $HOST_SSH tcp dport 22 accept          # unica cosa concessa all'host
+        log prefix "assess_in_drop " level info drop    # altro scanner->host: negato
+    }
     chain forward {
         type filter hook forward priority -5; policy accept;
 
-        # Solo il traffico ORIGINATO dalla subnet `uscita` dello scanner ci
-        # riguarda. Tutto il resto prosegue: non e' compito di queste regole.
+        # app/db escono dalla rete `interna` (sorgente != subnet uscita): intatti.
         ip saddr != $SUBNET_USCITA accept
 
-        # Da qui in poi: sorgente DENTRO la subnet uscita.
-
-        # Connessioni gia' stabilite e il loro traffico di ritorno.
         ct state established,related accept
-
-        # L'UNICA destinazione applicativa consentita in uscita: host:22 (SSH).
-        ip daddr $HOST_SSH tcp dport 22 accept
-
-        # Tutto il resto dalla subnet uscita e' negato: nessuna uscita verso
-        # Internet. Si logga il drop per diagnosi (rate dal kernel).
-        log prefix "assess_egress_drop " level info drop
+        log prefix "assess_fwd_drop " level info drop   # scanner->Internet: negato
     }
 }

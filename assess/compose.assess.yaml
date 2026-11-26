@@ -39,7 +39,7 @@ services:
 
   scanner:
     build:
-      context: ..
+      context: .
       dockerfile: assess/Dockerfile
     # Non-root (uid/gid 1002) e nessun privilegio: fissati nel Dockerfile. Le
     # regole nft NON girano nel container (sono host-side), quindi niente
@@ -62,8 +62,8 @@ services:
       - /etc/hermes-vspt/secrets/scanner_ed25519:/run/secrets/scanner_ed25519:ro
       - /etc/hermes-vspt/secrets/known_hosts:/run/secrets/known_hosts:ro
       # Config di scope compilata dall'operatore e directory dei report.
-      - ./scope.toml:/scope/scope.toml:ro
-      - ./out:/opt/pannello/assess/out
+      - ./assess/scope.toml:/scope/scope.toml:ro
+      - ./assess/out:/opt/pannello/assess/out
     # Lo scanner NON parte da solo: niente scansioni al boot. Si lancia a mano
     # col sottocomando `run`. `profiles` evita che un `up` del pannello lo tiri
     # su per sbaglio.
