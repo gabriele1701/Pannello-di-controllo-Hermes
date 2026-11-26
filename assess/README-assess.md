@@ -129,9 +129,12 @@ Il confinamento è a due livelli, e **quello che conta è la rete**:
    ha gateway, quindi non può raggiungere `host:22` e il collector `system` non
    partirebbe mai. Perciò lo scanner sta anche su una seconda rete *con* gateway
    (`uscita`), con **subnet fissa** (`ipam`, da `VSPT_SUBNET_USCITA`), ristretta
-   dalle regole **`net/nftables-assess.nft`** applicate **host-side** nel forward
-   path: dalla subnet `uscita` si concede SOLO `host:22` ed
-   `established/related`, e si fa `drop` del resto. Non si autorizza DNS generico:
+   dalle regole **`net/nftables-assess.nft`** applicate **host-side** in due
+   catene a priorità negativa (prima di Docker). Poiché l'endpoint SSH è un
+   indirizzo **locale** della VM, il traffico scanner→`host:22` è consegnato via
+   **INPUT**, non forward: la catena `input` concede dalla subnet `uscita` SOLO
+   `host:22` ed `established/related` e fa `drop` di ogni altro accesso all'host;
+   la catena `forward` fa `drop` dell'uscita verso Internet. Non si autorizza DNS generico:
    per il primo test `system` non serve traffico DNS in uscita. Il filtro è **per subnet**, non per IP
    per-container (che cambiano a ogni `up`): la stessa `VSPT_SUBNET_USCITA`
    alimenta compose e nft, così rete e filtro concordano. La garanzia è "gateway
@@ -168,8 +171,11 @@ a controlli Python:
   permette la comunicazione verso i servizi autorizzati senza uscita Internet;
 - `uscita` è una seconda rete con gateway, necessaria per il solo collegamento
   SSH all'host. Ha una subnet esplicita (`VSPT_SUBNET_USCITA`) e le regole
-  nftables host-side consentono da quella subnet soltanto `host:22/tcp` e
-  traffico `established/related`; il resto viene scartato;
+  nftables host-side (due catene: `input` per l'SSH all'host, `forward` per
+  l'uscita) consentono da quella subnet soltanto `host:22/tcp` ed
+  `established/related` — l'SSH è consegnato via INPUT perché l'endpoint è un
+  indirizzo locale della VM; il resto, incluso l'egress verso Internet, viene
+  scartato;
 - la stessa subnet viene passata a Compose e allo script nftables, evitando
   divergenze fra rete e filtro;
 - il self-check di egress prova indirizzi/porte sentinella esterni prima di
