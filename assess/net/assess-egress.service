@@ -1,0 +1,13 @@
+[Unit]
+Description=VSPT scanner egress confinement (nftables assess_egress)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/hermes-vspt/egress.env
+ExecStart=/opt/pannello/assess/net/applica-nftables.sh
+
+[Install]
+WantedBy=multi-user.target
